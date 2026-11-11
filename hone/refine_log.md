@@ -27,3 +27,20 @@ blamed player accepts the numbers.
 | 1 | largest-remainder %, call confidence, mobile card entry, draft autosave, Next match, share image + copy text, how-it-works, per-match history with delete/undo, export/import, gold crest theme | 5/5 + e2e 13/13 | 8.4 (self) | self | yes | C1 8.5, C2 8, C3 9, C4 7.5, C5 9.5 |
 
 stop: judge blocked (council hung 3x) - self-judged; kept v1. Remaining gap to 10: screenshot import (OCR) for C2, stronger visual identity for C4.
+
+## Round 2 (continue) - council back online
+
+| Version | Gates | Council score (1 run, 3 judges) | Pairwise vs previous | Kept |
+|---|---|---|---|---|
+| v1 | 5/5 | 8.95 (C1 9, C2 9, C3 9, C4 8, C5 10) | - | - |
+| v2 | 5/5 | 8.75 (C2 8, C4 9) | beat v1 3-0 | - |
+| v3 | 5/5 | 8.60 (C2 8, C4 8) | beat v2 3-0 | yes |
+
+- v2: screenshot / pasted-text import (importer.js + Tesseract.js), lane colours, Threw/Carried stamps, role-aware KDA target,
+  data warnings (blank stats, < 5 players), heroes and top reason in share text/image, "Best on losing team" label.
+- v3: one-tap Paste from clipboard, visible actual-vs-expected per stat, sticky-bar scroll padding, offline message for OCR.
+- Tests: node (scoring + parser, incl. OCR-style text), e2e 26/26 incl. OCR of a synthetic dark scoreboard (hone/shots/e2e_scoreboard.png).
+- Stop: pairwise prefers each newer version 3-0 but single absolute runs drift down (+-0.3 judge spread) as judges ask for the
+  next tier (auto-advance, per-card uncertainty, share preview). Stopped after v3 to avoid chasing a moving bar.
+- Not verified: OCR on real MLBB screenshots from real phones.
+- Shipped: repo 95470ba, Pages live (importer.js 200), landing 5d32e9a, vault ce071df.
