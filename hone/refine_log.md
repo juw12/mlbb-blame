@@ -37,14 +37,14 @@ Round 7 (v8) - the nine suggestions the council made on v7 (joined the queue in 
 - [x] Tests on v8: node test.js, e2e 89/89, offline 7/7, gates 5/5
 - [x] Council on v8: score 9.0 (v7 9.3), pairwise v8 > v7 3-0, both orders agree; kept on the pairwise, stop: plateau
 Sync and close:
-- [ ] Repo pushed, live site serves the kept version
-- [ ] Landing page /p/mlbb-blame/
-- [ ] Profile README section
-- [ ] Portfolio card
-- [ ] Obsidian project note + Update Log
-- [ ] Lessons appended
-- [ ] Cairn session ended
-- [ ] Final report
+- [x] Repo pushed, live site serves the kept version (app ddb00ad; live sw.js says whothrew-shell-v8)
+- [x] Landing page /p/mlbb-blame/ (landing 0dcd82f; live page shows "Compact 1080")
+- [x] Profile README section (72e3d3f; raw README has the detailed-or-compact line)
+- [x] Portfolio card (catalog juw12/projects fbe5ac0; portfolio 06bb3f2; juwenlie.pages.dev shows the new text, checked 02:00)
+- [x] Obsidian project note + Update Log (vault 5b396f7, plus a follow-up line for the portfolio card)
+- [x] Lessons appended (19 bullets, mlbb-blame r6-7)
+- [x] Cairn session ended (shipped)
+- [x] Final report
 
 ## Goal beyond the goal
 Settle "who threw?" arguments in a squad chat in under a minute after the match, fairly enough that the
@@ -67,6 +67,11 @@ blamed player accepts the numbers.
 - Assumed (round 7): the screenshot reader is never fetched in the background on metered or data-saver connections, or without a service-worker controller.
 - Assumed (round 7): v8 is kept on the unanimous pairwise (3-0, both orders) although its single absolute score (9.0) is 0.3 under v7's (9.3); this is the same call as rounds 2 and 4-6, where the pairwise decided and the absolute run was treated as within judge spread. The strict rule (score >= best + MIN_GAIN) would have reverted it.
 - Assumed (round 7): the loop ends here on PLATEAU (2 rounds in this run under MIN_GAIN: +0.0, then -0.3). The nine suggestions the council made on v8 are closed by the stop rule with a reason each (not implemented) and are not carried as next items; they are not added to Precedent/Queue.md because the request was "no more next or open items".
+- Assumed (sync v8): all pushes went through the local proxy at localhost:3128 (git http proxy option); the user-agent workaround was not used.
+- Assumed (sync v8): the landing publish ran through an in-memory proxy override wrapper; the skill's own config was not changed.
+- Assumed (sync v8): the vault push also carried two commits that other sessions had already made locally (78e71dd, df3a75d); their uncommitted files were left alone.
+- Assumed (sync v8): the nine v8 council suggestions are closed by the plateau stop: none implemented, none queued.
+- Assumed (sync v8): the portfolio card was refreshed by running the catalog's own generator locally (projects/scripts/publish_portfolio.py, the command sync-cards.yml runs) and pushing the one-line result, because `gh` is not installed here and the scheduled sync had not run since 15:39 UTC.
 
 ## Rounds
 | round | change | gates | judge score | pairwise win | kept? | note |
@@ -289,3 +294,14 @@ Council suggestions on v8 - closed by the stop rule, none implemented, none carr
   installed PWA on Android and cannot be tested in desktop Chromium here.
 - GLM-5.3-Flash: combined what-ifs (several stats at once). Not done; the line says each change was tried one at a time.
 - GLM-5.3-Flash: wrap the "Less reliable" caveat on the share images instead of squeezing it into one line. Not done.
+
+## Sync close-out (v8, 2026-11-12)
+- App juw12/mlbb-blame ddb00ad; landing 0dcd82f; profile README 72e3d3f; catalog juw12/projects fbe5ac0; vault 5b396f7.
+- Portfolio site: at 01:47 juwenlie.pages.dev still showed the round-3 card text. Cause: sync-cards.yml last ran at 15:39 UTC,
+  before the round 4, round 5 and v8 catalog pushes (GitHub ran the hourly schedule only twice that day). `gh` is not installed,
+  so the workflow could not be dispatched. Ran the same generator locally against a fresh portfolio clone: index.html changed by
+  exactly one line (the Who Threw? card details), feed.xml unchanged. Pushed as juw12/portfolio 06bb3f2; "Deploy portfolio to
+  GitHub Pages" succeeded; juwenlie.pages.dev and juw12.github.io/portfolio both show "detailed or compact result image" (02:00).
+- "Check project card art" failed on 06bb3f2; it has failed on every portfolio push since at least 2026-11-10 (six runs before
+  this one), so it is not caused by this change. The generator warns about another project's card image (vow). Not touched: outside this run.
+- Stop: plateau (round 6 gain 0.0, round 7 gain -0.3 on the score, v8 kept on a 3-0 pairwise). Queue empty.
