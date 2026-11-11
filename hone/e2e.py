@@ -41,9 +41,14 @@ with sync_playwright() as p:
     step("copy text has blame line", "most to blame: Darren" in clip, clip.splitlines()[0] if clip else "")
     step("copy text names heroes", "Fanny" in clip and "Tigreal" in clip)
 
+    page.click("#shareImage")
+    page.wait_for_selector("#sharePreview[open]", timeout=5000)
+    preview_ok = page.evaluate("() => document.getElementById('sharePreviewImg').naturalWidth === 1080")
+    step("share opens image preview", preview_ok)
     with page.expect_download() as download_info:
-        page.click("#shareImage")
+        page.click("#sharePreviewDownload")
     download = download_info.value
+    page.click("#sharePreviewClose")
     image_path = APP / "hone" / "shots" / "e2e_share.png"
     download.save_as(str(image_path))
     step("share image downloads PNG", image_path.stat().st_size > 20000, f"{image_path.stat().st_size} bytes")
@@ -127,6 +132,45 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     warn_text = page.inner_text(".data-warn") if page.locator(".data-warn").count() else ""
     step("blank stat and 4 players are warned", "Only 4 of 5" in warn_text and "Kai: Turret dmg left blank" in warn_text, warn_text[:120])
+    chip_text = page.inner_text(".banner .chip")
+    step("chip folds in missing data", "but only 4 of 5 players entered" in chip_text, chip_text)
+
+    # v4: "How is this decided?" opens the explanation with thresholds
+    page.click("#howLink")
+    page.wait_for_timeout(300)
+    how_open = page.evaluate("() => document.getElementById('how').open")
+    how_text = page.inner_text("#how")
+    step("how link opens thresholds", how_open and "Clear call" in how_text and "0.4" in how_text, how_text[-120:].replace("\n", " "))
+
+    # v4: typing 2/11/3 in K fills K, D and A
+    page.fill(".pcard:nth-child(1) [data-f=kills]", "")
+    page.type(".pcard:nth-child(1) [data-f=kills]", "2/11/3")
+    kda = [page.input_value(f".pcard:nth-child(1) [data-f={f}]") for f in ("kills", "deaths", "assists")]
+    focused = page.evaluate("() => document.activeElement.dataset.f")
+    step("K field splits 2/11/3", kda == ["2", "11", "3"] and focused == "gold", f"{kda} focus={focused}")
+
+    # v4: a near-tie names the runner-up and tags the within-margin card
+    near_tie = [
+        ("A", "Gold Lane", "7", "2", "6", "12000", "80000", "30000", "1000"),
+        ("B", "EXP Lane", "3", "4", "6", "9000", "60000", "80000", "1000"),
+        ("C", "Mid Lane", "3", "4", "6", "9000", "60000", "30000", "1000"),
+        ("D", "Jungle", "3", "9", "6", "9000", "60000", "30000", "1000"),
+        ("E", "Jungle", "3", "9", "5", "9000", "60000", "30000", "1000"),
+    ]
+    fields = ("name", "role", "kills", "deaths", "assists", "gold", "damage", "taken", "turret")
+    for index, row in enumerate(near_tie, start=1):
+        for field, value in zip(fields, row):
+            selector = f".pcard:nth-child({index}) [data-f={field}]"
+            if field == "role":
+                page.select_option(selector, value)
+            else:
+                page.fill(selector, value)
+    page.click("#result button[data-result=lose]")
+    page.click("#analyze")
+    page.wait_for_timeout(300)
+    runner_text = page.inner_text(".banner .runner") if page.locator(".banner .runner").count() else ""
+    near_tags = page.locator("article.card .tag.near").count()
+    step("close call names runner-up", "Too close" in runner_text and near_tags >= 1, f"{runner_text[:80]} | tags={near_tags}")
 
     page.fill("#importText", "gg ez report jungler")
     page.click("#importFill")

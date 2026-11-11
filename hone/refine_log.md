@@ -44,3 +44,28 @@ stop: judge blocked (council hung 3x) - self-judged; kept v1. Remaining gap to 1
   next tier (auto-advance, per-card uncertainty, share preview). Stopped after v3 to avoid chasing a moving bar.
 - Not verified: OCR on real MLBB screenshots from real phones.
 - Shipped: repo 95470ba, Pages live (importer.js 200), landing 5d32e9a, vault ce071df.
+
+## Round 3 (2026-11-11) - v4
+
+Targets: the v3 council fixes (uncertainty on close calls, share-image polish, discoverable method, data warnings in the
+verdict, faster K/D/A entry).
+
+Changes (v4):
+- `scoring.js`: named thresholds `CLEAR_GAP` = 1 and `MARGIN_GAP` = 0.4; `call` now carries `close`, `runnerUp`,
+  `runnerUpScore`; each player gets `withinMargin` (score within 0.4 of the blamed/MVP player).
+- Close calls name the runner-up in the banner; cards within the margin are tagged "Nearly as much to blame" / "Almost MVP".
+- Confidence chip folds in data problems: "Clear call, but only 4 of 5 players entered".
+- "How is this decided?" link under the verdict opens the explanation, which now lists the thresholds.
+- Share image: preview dialog first (Share when the browser can share files, Download, Close); Why line wraps to 2 lines
+  with an ellipsis; close calls show the runner-up on the image; text summary names the runner-up.
+- Typing or pasting `2/11/3` into K, D or A fills all three and jumps to Gold.
+
+Checks: `node test.js` pass (new test 11 for thresholds, runner-up and margin flags); `hone/e2e.py` 31/31 PASS (new:
+share preview, chip warning, How link, K/D/A split, close-call runner-up); `hone/check.py v4` gates 5/5.
+
+Council (Pega-Vision, Pega-Thinking, GLM-5.3-Flash): v4 single score 9.1 (v3 was 8.60); pairwise v4 > v3 3-0, both
+orders agree. Kept v4.
+
+Remaining council suggestions (not done): one-tap share without the preview step, absolute stat values beside the
+percentages, remember returning players' hero/role, last-5 trend in history, offline OCR (Tesseract still needs one
+download), auto-advance between stat fields.

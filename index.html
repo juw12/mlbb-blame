@@ -113,7 +113,16 @@
   .diverge { position: relative; height: 8px; background: #0a1124; border-radius: 4px; align-self: center; }
   .diverge::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #3a4670; }
   .diverge > div { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
-  details.how { margin-top: 14px; }
+  details.how { margin-top: 14px; scroll-margin-top: 16px; }
+  .tag.near { background: rgba(255,170,100,.14); color: #ffd2a8; margin-left: 4px; }
+  .runner { margin-top: 8px; font-size: 13.5px; color: #ffd2a8; }
+  .link { background: none; border: 0; padding: 0; margin-left: 8px; color: var(--blue); font: inherit; font-size: 12.5px;
+          font-weight: 700; text-decoration: underline; cursor: pointer; min-height: 0; padding: 8px 2px; }
+  dialog.preview { max-width: min(92vw, 440px); width: 100%; background: var(--panel); color: var(--text);
+                   border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  dialog.preview::backdrop { background: rgba(5,8,18,.75); }
+  dialog.preview img { display: block; width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; background: #0a0f1f; }
+  dialog.preview .row { margin-top: 12px; }
   details.how summary { cursor: pointer; color: var(--blue); font-weight: 600; }
   details.how p, details.how li { color: var(--muted); font-size: 13.5px; }
 
@@ -222,6 +231,15 @@
   </footer>
 </main>
 <div class="toast" id="toast" hidden></div>
+<dialog class="preview" id="sharePreview" aria-labelledby="sharePreviewTitle">
+  <div id="sharePreviewTitle" style="font-weight:800;margin-bottom:8px">Your result image</div>
+  <img id="sharePreviewImg" alt="Preview of the result image">
+  <div class="row">
+    <button class="primary" id="sharePreviewShare" type="button">Share</button>
+    <button id="sharePreviewDownload" type="button">Download</button>
+    <button id="sharePreviewClose" type="button">Close</button>
+  </div>
+</dialog>
 
 <script src="scoring.js"></script>
 <script src="importer.js"></script>
@@ -380,16 +398,30 @@ function dataWarnings(raw) {
   return warnings;
 }
 
+// One short clause for the confidence chip, e.g. "only 4 of 5 players entered".
+function warningSummary(raw) {
+  const named = raw.filter((r) => r.name.trim());
+  if (named.length < 5) return `only ${named.length} of 5 players entered`;
+  const blanks = named.filter((r) => NUMERIC.some(([f]) => String(r[f]).trim() === "")).length;
+  if (blanks) return `${blanks} player${blanks > 1 ? "s have" : " has"} blank stats`;
+  return "";
+}
+
 function headline(analysis) {
   const won = analysis.result === "win";
   const top = [...analysis.players].sort((a, b) => b.share - a.share)[0];
   return { won, top };
 }
 
-function renderAnalysis(analysis) {
+function renderAnalysis(analysis, warning = "") {
   const { won, top } = headline(analysis);
   const sorted = [...analysis.players].sort((a, b) => b.share - a.share);
-  const close = analysis.call.label.startsWith("Close");
+  const close = analysis.call.close || Boolean(warning);
+  const callText = warning ? `${analysis.call.label}, but ${warning}` : analysis.call.label;
+  const nearLabel = won ? "Almost MVP" : "Nearly as much to blame";
+  const runner = analysis.call.close && analysis.call.runnerUp
+    ? `<div class="runner">Too close to pin on one player: <b>${escapeHtml(analysis.call.runnerUp)}</b> (${analysis.call.runnerUpScore.toFixed(1)}) is only ${analysis.call.gap.toFixed(1)} pts away. Cards tagged “${nearLabel}” are within the ${MARGIN_GAP} pt margin.</div>`
+    : "";
   const bannerText = won
     ? `🏆 Victory — MVP: ${escapeHtml(top.name)}`
     : `💀 Defeat — most to blame: ${escapeHtml(top.name)}`;
@@ -416,12 +448,15 @@ function renderAnalysis(analysis) {
     const stamp = p.verdict === "MVP" ? '<span class="stamp carried">Carried</span>'
       : p.verdict === "MVP (lose)" ? '<span class="stamp carried">Tried</span>'
       : p.verdict === "Most to blame" ? '<span class="stamp threw">Threw</span>' : "";
+    const near = p.withinMargin
+      ? `<span class="tag near" title="Score within ${MARGIN_GAP} of ${escapeHtml(top.name)}: the call could fairly go to this player instead.">${nearLabel}</span>`
+      : "";
     return `<article class="card ${cls}" data-role="${p.role}">
       <div class="card-head">
         <div style="min-width:0">
           <div class="name">${escapeHtml(p.name)}</div>
           <div class="meta"><span class="role-dot"></span>${escapeHtml(p.hero || "—")} · ${p.role} · ${p.kills}/${p.deaths}/${p.assists}</div>
-          <span class="tag ${tagClass(p.verdict)}" title="${VERDICT_HELP[p.verdict] || ""}">${verdictLabel(p.verdict)}</span>${stamp}
+          <span class="tag ${tagClass(p.verdict)}" title="${VERDICT_HELP[p.verdict] || ""}">${verdictLabel(p.verdict)}</span>${near}${stamp}
         </div>
         <div class="score">${p.score.toFixed(1)}<small>impact /10</small></div>
       </div>
@@ -437,7 +472,9 @@ function renderAnalysis(analysis) {
     <div class="banner ${won ? "win" : "lose"}">
       <div class="big">${bannerText}</div>
       <div class="sub">${bannerSub}</div>
-      <span class="chip ${close ? "close" : "clear"}">${analysis.call.label} · ${analysis.call.gap.toFixed(1)} pts ${won ? "ahead of the runner-up" : "below the next-lowest player"}</span>
+      <span class="chip ${close ? "close" : "clear"}">${escapeHtml(callText)} · ${analysis.call.gap.toFixed(1)} pts ${won ? "ahead of the runner-up" : "below the next-lowest player"}</span>
+      <button class="link" id="howLink" type="button">How is this decided?</button>
+      ${runner}
     </div>
     <div class="row share-row">
       <button class="primary" id="shareImage" type="button">Share result image</button>
@@ -445,17 +482,24 @@ function renderAnalysis(analysis) {
       <button id="save" type="button">Save to squad history</button>
     </div>
     <div class="cards">${cards}</div>
-    <details class="how"><summary>How is this calculated?</summary>
+    <details class="how" id="how"><summary>How is this calculated?</summary>
       <ul>
         <li>For every stat the app takes the player's share of the team total and compares it with what their role usually gets (a Roam is expected to have low gold; a Gold Laner low damage taken).</li>
         <li>Each stat is weighted by role (shown as % in the breakdown) and the result is mapped to a 0–10 impact score, where about 6 is an average game. The KDA target is role-aware too: 2.5 for Roam and EXP Lane, 3 for the others.</li>
-        <li>Blame share in a loss is proportional to (10 − score)²; credit share in a win to score². The call is "clear" when the top player is 1+ point away from the next.</li>
+        <li>Blame share in a loss is proportional to (10 − score)²; credit share in a win to score². </li>
+        <li>How sure the call is depends on the impact-score gap between the top player and the next one: <b>Clear call</b> at ${CLEAR_GAP}+ point, <b>Fairly clear</b> from ${MARGIN_GAP} to ${CLEAR_GAP}, and <b>Close call</b> under ${MARGIN_GAP}. In a close call the runner-up is named and every card within ${MARGIN_GAP} of the top player is tagged, because small stat differences could flip it.</li>
+        <li>The chip also says when data is missing (fewer than 5 players or blank stats), since blanks count as 0.</li>
         <li>Not measured: map awareness, vision, rotations, objective calls, the draft and early-game mistakes.</li>
       </ul>
     </details>`;
   document.getElementById("save").onclick = saveMatch;
   document.getElementById("copyText").onclick = copySummary;
   document.getElementById("shareImage").onclick = shareImage;
+  document.getElementById("howLink").onclick = () => {
+    const how = document.getElementById("how");
+    how.open = true;
+    how.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 }
 
 function summaryText(analysis) {
@@ -464,7 +508,7 @@ function summaryText(analysis) {
   const lines = [
     won ? `🏆 MLBB Victory — MVP: ${top.name} (${heroRole(top)}, ${top.kills}/${top.deaths}/${top.assists}) ${top.sharePct}% of the credit`
         : `💀 MLBB Defeat — most to blame: ${top.name} (${heroRole(top)}, ${top.kills}/${top.deaths}/${top.assists}) ${top.sharePct}% of the blame`,
-    `${analysis.call.label} (${analysis.call.gap.toFixed(1)} pts gap)`,
+    `${analysis.call.label} (${analysis.call.gap.toFixed(1)} pts gap${analysis.call.close && analysis.call.runnerUp ? `; runner-up ${analysis.call.runnerUp}` : ""})`,
     "",
     ...ranked.map((p) => `${p.score.toFixed(1)}  ${p.name} · ${heroRole(p)} · ${p.kills}/${p.deaths}/${p.assists} · ${verdictLabel(p.verdict)}`),
     "",
@@ -505,12 +549,38 @@ async function copySummary() {
   showToast("Result copied — paste it in your squad chat");
 }
 
+// Draw text wrapped to maxWidth, at most maxLines lines; the last line gets "…" if it overflows.
+function wrapText(g, content, x, y, maxWidth, lineHeight, maxLines) {
+  const words = content.split(/\s+/);
+  const out = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (g.measureText(candidate).width <= maxWidth || !current) {
+      current = candidate;
+    } else {
+      out.push(current);
+      current = word;
+    }
+  }
+  if (current) out.push(current);
+  const shown = out.slice(0, maxLines);
+  if (out.length > maxLines) {
+    let last = shown[maxLines - 1];
+    while (last && g.measureText(`${last}…`).width > maxWidth) last = last.slice(0, -1);
+    shown[maxLines - 1] = `${last.trimEnd()}…`;
+  }
+  shown.forEach((line, i) => g.fillText(line, x, y + i * lineHeight, maxWidth));
+  return shown.length;
+}
+
 function drawResultImage(analysis) {
   const { won, top } = headline(analysis);
   const ranked = [...analysis.players].sort((a, b) => b.share - a.share);
   const W = 1080;
   const why = (won ? top.strengths : top.weaknesses).slice(0, 2).map((b) => b.text).join(" · ");
-  const H = 380 + ranked.length * 150 + 120;
+  const ROWS_TOP = 420;
+  const H = ROWS_TOP + 20 + ranked.length * 150 + 120;
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
@@ -531,14 +601,17 @@ function drawResultImage(analysis) {
   g.fillText(won ? `MVP: ${top.name}` : `To blame: ${top.name}`, 70, 185, W - 140);
   g.fillStyle = won ? "#f2c14e" : accent;
   g.font = "700 38px system-ui, Segoe UI, sans-serif";
-  g.fillText(`${top.sharePct}% of the ${won ? "credit" : "blame"} · ${analysis.call.label}`, 70, 245, W - 140);
+  const callLine = analysis.call.close && analysis.call.runnerUp
+    ? `Close call · runner-up ${analysis.call.runnerUp}`
+    : analysis.call.label;
+  g.fillText(`${top.sharePct}% of the ${won ? "credit" : "blame"} · ${callLine}`, 70, 245, W - 140);
   if (why) {
     g.fillStyle = "#c3cae0";
     g.font = "500 28px system-ui, Segoe UI, sans-serif";
-    g.fillText(`Why: ${why}`, 70, 295, W - 140);
+    wrapText(g, `Why: ${why}`, 70, 295, W - 140, 38, 2);
   }
   ranked.forEach((p, i) => {
-    const y = 360 + i * 150;
+    const y = ROWS_TOP + i * 150;
     g.fillStyle = i === 0 ? "rgba(255,255,255,.07)" : "rgba(255,255,255,.035)";
     g.fillRect(50, y - 20, W - 100, 130);
     g.fillStyle = "#eef1f8";
@@ -566,24 +639,40 @@ function drawResultImage(analysis) {
   return canvas;
 }
 
+// "Share result image" first shows a preview, then shares (phone) or downloads.
 function shareImage() {
   const canvas = drawResultImage(lastAnalysis);
-  canvas.toBlob(async (blob) => {
+  const dialog = document.getElementById("sharePreview");
+  canvas.toBlob((blob) => {
     const file = new File([blob], "mlbb-result.png", { type: "image/png" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    const url = URL.createObjectURL(blob);
+    const canShareFile = Boolean(navigator.canShare && navigator.canShare({ files: [file] }));
+    const shareBtn = document.getElementById("sharePreviewShare");
+    document.getElementById("sharePreviewImg").src = url;
+    shareBtn.hidden = !canShareFile;
+    const download = () => {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "mlbb-result.png";
+      link.click();
+      showToast("Result image downloaded");
+    };
+    shareBtn.onclick = async () => {
       try {
         await navigator.share({ files: [file], text: summaryText(lastAnalysis) });
-        return;
+        dialog.close();
       } catch (e) {
-        if (e.name === "AbortError") return;
+        if (e.name !== "AbortError") download();
       }
+    };
+    document.getElementById("sharePreviewDownload").onclick = download;
+    document.getElementById("sharePreviewClose").onclick = () => dialog.close();
+    dialog.onclose = () => setTimeout(() => URL.revokeObjectURL(url), 2000);
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+    } else {
+      download();
     }
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "mlbb-result.png";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 2000);
-    showToast("Result image downloaded");
   }, "image/png");
 }
 
@@ -830,7 +919,22 @@ document.getElementById("importImage").onchange = (event) => {
 document.querySelectorAll("#result button").forEach((b) => {
   b.onclick = () => setOutcome(b.dataset.result);
 });
-playersEl.addEventListener("input", saveDraft);
+// Typing or pasting "2/11/3" (or "2 11 3") into K, D or A fills all three.
+function splitKda(input) {
+  const match = input.value.match(/^\s*(\d+)\s*[\/\s\-]\s*(\d+)\s*[\/\s\-]\s*(\d+)\s*$/);
+  if (!match) return false;
+  const card = input.closest(".pcard");
+  ["kills", "deaths", "assists"].forEach((f, i) => {
+    card.querySelector(`[data-f=${f}]`).value = match[i + 1];
+  });
+  card.querySelector("[data-f=gold]").focus();
+  return true;
+}
+
+playersEl.addEventListener("input", (event) => {
+  if (["kills", "deaths", "assists"].includes(event.target.dataset.f)) splitKda(event.target);
+  saveDraft();
+});
 playersEl.addEventListener("change", () => {
   syncRoleColours();
   saveDraft();
@@ -855,7 +959,7 @@ document.getElementById("analyze").onclick = () => {
   errorEl.textContent = "";
   try {
     lastAnalysis = analyzeMatch({ result: outcome, players: readPlayers() });
-    renderAnalysis(lastAnalysis);
+    renderAnalysis(lastAnalysis, warningSummary(readRaw()));
     const warnings = dataWarnings(readRaw());
     if (warnings.length) {
       document.getElementById("output").insertAdjacentHTML("afterbegin",

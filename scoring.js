@@ -126,15 +126,27 @@ function roundedPercents(fractions) {
 }
 
 // How clear the call is: score gap between the blamed (or MVP) player and the runner-up.
+const CLEAR_GAP = 1;    // 1+ impact point between the top two = "Clear call"
+const MARGIN_GAP = 0.4; // under this the top two are within the margin = "Close call"
 function callConfidence(ranked, won) {
-  if (ranked.length < 2) return { gap: 0, label: "Only one player" };
-  const gap = won
-    ? ranked[0].rawScore - ranked[1].rawScore
-    : ranked[ranked.length - 2].rawScore - ranked[ranked.length - 1].rawScore;
+  if (ranked.length < 2) return { gap: 0, label: "Only one player", close: false, runnerUp: null };
+  const top = won ? ranked[0] : ranked[ranked.length - 1];
+  const next = won ? ranked[1] : ranked[ranked.length - 2];
+  const gap = Math.abs(top.rawScore - next.rawScore);
   let label = "Close call - could go either way";
-  if (gap >= 1) label = "Clear call";
-  else if (gap >= 0.4) label = "Fairly clear call";
-  return { gap: Math.round(gap * 10) / 10, label };
+  if (gap >= CLEAR_GAP) label = "Clear call";
+  else if (gap >= MARGIN_GAP) label = "Fairly clear call";
+  // Everyone (other than the top player) whose score is within the margin of the top player.
+  for (const r of ranked) {
+    r.withinMargin = r !== top && Math.abs(r.rawScore - top.rawScore) < MARGIN_GAP;
+  }
+  return {
+    gap: Math.round(gap * 10) / 10,
+    label,
+    close: gap < MARGIN_GAP,
+    runnerUp: next.name,
+    runnerUpScore: Math.round(next.rawScore * 10) / 10,
+  };
 }
 
 // Win: reward share ∝ score². Loss: blame share ∝ (10 - score)².
@@ -172,5 +184,5 @@ function assignVerdicts(results, outcome) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { analyzeMatch, roundedPercents, ROLES };
+  module.exports = { analyzeMatch, roundedPercents, ROLES, CLEAR_GAP, MARGIN_GAP };
 }

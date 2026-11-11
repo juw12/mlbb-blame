@@ -1,6 +1,6 @@
 // Run: node test.js
 const assert = require("assert");
-const { analyzeMatch, roundedPercents } = require("./scoring.js");
+const { analyzeMatch, roundedPercents, CLEAR_GAP, MARGIN_GAP } = require("./scoring.js");
 
 const sumShares = (a) => a.players.reduce((t, p) => t + p.share, 0);
 const byName = (a, name) => a.players.find((p) => p.name === name);
@@ -144,6 +144,32 @@ assert.deepStrictEqual(
 const junk = parseStatsText("gg ez report jungler");
 assert.strictEqual(junk.players.length, 0);
 assert.ok(junk.warnings[0].includes("K/D/A"));
+
+// 11. Confidence: thresholds are named, the runner-up is reported, and near-ties are flagged per player.
+assert.strictEqual(CLEAR_GAP, 1);
+assert.strictEqual(MARGIN_GAP, 0.4);
+assert.strictEqual(loss.call.runnerUp !== "Darren", true);
+assert.strictEqual(loss.call.close, loss.call.gap < MARGIN_GAP);
+const twin = { role: "Mid Lane", kills: 3, deaths: 4, assists: 6, gold: 9000, damage: 60000, taken: 30000, turret: 1000 };
+const nearTie = analyzeMatch({
+  result: "lose",
+  players: [
+    { ...twin, name: "A", role: "Gold Lane", kills: 7, deaths: 2, gold: 12000, damage: 80000 },
+    { ...twin, name: "B", role: "EXP Lane", taken: 80000 },
+    { ...twin, name: "C" },
+    { ...twin, name: "D", role: "Jungle", deaths: 9 },
+    { ...twin, name: "E", role: "Jungle", deaths: 9, assists: 5 },
+  ],
+});
+const blamed = nearTie.players.find((p) => p.verdict === "Most to blame");
+assert.ok(nearTie.call.close, `expected a close call, gap ${nearTie.call.gap}`);
+assert.ok(["D", "E"].includes(blamed.name));
+assert.strictEqual(nearTie.call.runnerUp, blamed.name === "D" ? "E" : "D");
+assert.strictEqual(byName(nearTie, nearTie.call.runnerUp).withinMargin, true);
+assert.strictEqual(blamed.withinMargin, false);
+assert.strictEqual(byName(nearTie, "A").withinMargin, false);
+// A clear call flags nobody.
+if (!loss.call.close) assert.ok(loss.players.every((p) => !p.withinMargin) || loss.call.gap < MARGIN_GAP);
 
 for (const [label, a] of [["loss", loss], ["win", win]]) {
   console.log(`\n${label}:`);
