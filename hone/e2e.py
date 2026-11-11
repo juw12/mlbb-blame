@@ -1,4 +1,4 @@
-"""End-to-end check of every button and flow, v1 to v7 (not a rubric gate; proves the features work).
+"""End-to-end check of every button and flow, v1 to v8 (not a rubric gate; proves the features work).
 
 python hone/e2e.py  -> prints one line per step, exits non-zero on any failure.
 """
@@ -64,8 +64,9 @@ with sync_playwright() as p:
     step("share button is ready and labelled", page.locator("#shareImage").is_enabled() and share_label == "Share result image", share_label)
     best_effort = page.inner_text("article.card.mvp .stamp") if page.locator("article.card.mvp .stamp").count() else ""
     step("best player on a losing team is stamped Best effort", best_effort.strip().lower() == "best effort", best_effort)
+    # v8: the method opens on its short summary; the formula is one tap further down, so read the section's full text
     step("method is open on the first analysis", page.evaluate("() => document.getElementById('how').open")
-         and "6 + 4" in page.inner_text("#how"))
+         and "6 + 4" in page.evaluate("() => document.getElementById('how').textContent"))
     step("example squad is not remembered", page.locator("#lastSquad").is_hidden() and page.locator("#forgetPlayers").is_hidden())
     open_states = page.eval_on_selector_all(
         "#output details.stats", "els => els.map(e => [e.closest('article').classList.contains('blame'), e.open])")
@@ -310,6 +311,14 @@ with sync_playwright() as p:
 
     # The method opens with the called player's own numbers worked through, step by step.
     page.evaluate("() => { document.getElementById('how').open = true; }")
+    # v8: the method is layered. Open, it shows a short summary and five closed parts; the detail is one tap away.
+    how_summary = page.inner_text("#howSummary") if page.locator("#howSummary").count() else ""
+    how_parts = page.eval_on_selector_all("#how > details", "els => els.map(e => [e.id, e.open])")
+    step("method opens on a short summary with the detail folded away",
+         page.locator("#howSummary").is_visible() and how_summary.startswith("In short") and len(how_summary) < 520
+         and how_parts == [[part, False] for part in ("howWorked", "howFormula", "howSure", "howWhy", "howBars")],
+         f"{len(how_summary)} chars | {how_parts}")
+    page.click("#howWorked > summary")
     worked = page.inner_text("#worked") if page.locator("#worked").count() else ""
     worked_steps = page.locator("#worked ol > li").count()
     step("worked example walks the called player's numbers", worked_steps == 5 and "Darren (Jungle)" in worked and "Deaths" in worked
@@ -340,6 +349,118 @@ with sync_playwright() as p:
     step("one button shows or hides every breakdown", toggle_before == "Show every player's breakdown" and all(opened) and len(opened) == 5
          and toggle_open == ["Hide all breakdowns", "true"] and not any(closed) and toggle_closed == ["Show every player's breakdown", "false"],
          f"{toggle_before} -> {toggle_open} -> {toggle_closed}")
+
+    # ---- v8 ----
+    # The page says next to the verdict that the baselines are this app's own estimates.
+    page.click("#analyze")
+    page.wait_for_selector("#shareImage:not([disabled])")
+    estimate = page.inner_text("#estimateNote") if page.locator("#estimateNote").count() else ""
+    step("verdict carries the 'estimates, not official data' note", page.locator("#estimateNote").is_visible()
+         and "not official Moonton data" in estimate, estimate[:110])
+
+    # The what-if also moves kills and assists, and its headline is set apart from the detail.
+    sensitivity = page.inner_text("#sensitivity")
+    sens_class = page.get_attribute("#sensitivity", "class") or ""
+    sens_lead = page.inner_text("#sensitivity > b") if page.locator("#sensitivity > b").count() else ""
+    step("what-if covers kills and assists for both players", "3 more kills or 3 more assists" in sensitivity
+         and "3 fewer assists" in sensitivity, sensitivity)
+    step("what-if headline is marked up on its own", sens_class.split() == ["sens", "holds"]
+         and sens_lead.startswith("🔒 Holds up both ways"), f"class={sens_class} lead={sens_lead}")
+
+    # Compact share image: square, chosen with one tap, remembered, and switchable from the preview.
+    page.click("#shareStyle button[data-style=compact]")
+    page.wait_for_selector("#shareImage:not([disabled])")
+    compact_size = page.evaluate("() => { const c = drawCompactImage(lastAnalysis); return [c.width, c.height]; }")
+    page.click("#shareImage")
+    page.wait_for_selector("#sharePreview[open]", timeout=5000)
+    try:
+        page.wait_for_function("() => document.getElementById('sharePreviewImg').naturalHeight === 1080", timeout=5000)
+    except Exception:
+        pass
+    preview_size = page.evaluate("() => { const i = document.getElementById('sharePreviewImg'); return [i.naturalWidth, i.naturalHeight]; }")
+    switch_label = page.inner_text("#sharePreviewStyle")
+    with page.expect_download() as download_info:
+        page.click("#sharePreviewDownload")
+    compact_path = APP / "hone" / "shots" / "e2e_share_compact.png"
+    download_info.value.save_as(str(compact_path))
+    step("compact share image is a 1080 square and downloads", compact_size == [1080, 1080] and preview_size == [1080, 1080]
+         and switch_label == "Switch to detailed" and compact_path.stat().st_size > 20000,
+         f"canvas={compact_size} preview={preview_size} '{switch_label}' {compact_path.stat().st_size} bytes")
+    page.click("#sharePreviewClose")
+    page.click("#analyze")
+    page.wait_for_selector("#shareImage:not([disabled])")
+    remembered = [
+        page.evaluate("() => localStorage.getItem('mlbb-analyzer-share-style')"),
+        page.get_attribute("#shareStyle button[data-style=compact]", "aria-pressed"),
+        page.get_attribute("#shareStyle button[data-style=detailed]", "aria-pressed"),
+    ]
+    step("compact choice is remembered for the next result", remembered == ["compact", "true", "false"], str(remembered))
+    page.click("#shareImage")
+    page.wait_for_selector("#sharePreview[open]", timeout=5000)
+    page.click("#sharePreviewStyle")
+    try:
+        page.wait_for_function("() => document.getElementById('sharePreviewImg').naturalHeight === 1560", timeout=5000)
+    except Exception:
+        pass
+    back_size = page.evaluate("() => { const i = document.getElementById('sharePreviewImg'); return [i.naturalWidth, i.naturalHeight]; }")
+    back_state = [page.inner_text("#sharePreviewStyle"), page.evaluate("() => localStorage.getItem('mlbb-analyzer-share-style')")]
+    page.click("#sharePreviewClose")
+    step("preview switches back to the detailed image", back_size == [1080, 1560] and back_state == ["Switch to compact", "detailed"]
+         and page.get_attribute("#shareStyle button[data-style=detailed]", "aria-pressed") == "true", f"{back_size} {back_state}")
+
+    # Nothing on the result page is set smaller than 12px (every breakdown and the method opened).
+    page.click("#toggleBreakdowns")
+    page.evaluate("() => { for (const d of document.querySelectorAll('#how, #how details')) d.open = true; }")
+    too_small = page.evaluate("""() => {
+        const found = [];
+        for (const el of document.querySelectorAll("body *")) {
+          if (!el.checkVisibility()) continue;
+          const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+          const size = parseFloat(getComputedStyle(el).fontSize);
+          if (ownText && size < 12) found.push(`${el.tagName.toLowerCase()}.${el.className} ${size}px`);
+          for (const pseudo of ["::before", "::after"]) {
+            const style = getComputedStyle(el, pseudo);
+            const content = style.content;
+            if (content && content !== "none" && content !== "normal" && content !== '""' && parseFloat(style.fontSize) < 12) {
+              found.push(`${el.tagName.toLowerCase()}.${el.className}${pseudo} ${style.fontSize}`);
+            }
+          }
+        }
+        return [...new Set(found)];
+    }""")
+    step("no text on the result page is smaller than 12px", too_small == [], str(too_small[:6]))
+
+    # A stat nobody entered is left out for everyone instead of costing everyone a point.
+    for index in range(1, 6):
+        page.fill(f".pcard:nth-child({index}) [data-f=turret]", "")
+    page.click("#analyze")
+    page.wait_for_timeout(300)
+    warn_text = page.inner_text(".data-warn") if page.locator(".data-warn").count() else ""
+    chip_text = page.inner_text(".banner .chip")
+    step("a stat left blank by the whole squad is reported once, not per player",
+         warn_text.count("Turret dmg not entered for anyone") == 1 and "left blank" not in warn_text
+         and "turret dmg left out (not entered)" in chip_text, f"{warn_text[:110]} | {chip_text}")
+    turret_rows = page.evaluate("""() => lastAnalysis.players.map((p) => {
+        const row = p.breakdown.find((b) => b.stat === "turret");
+        return [row.skipped === true, row.points];
+    })""")
+    strip_dashes = page.eval_on_selector_all(
+        "article.card.blame .mini > span", "els => els.filter(e => e.querySelector('b').textContent === '–').length")
+    full_strip = page.evaluate("""() => {
+        const blame = lastAnalysis.players.find((p) => p.verdict === "Most to blame");
+        return blame.breakdown.filter((b) => b.weight === 0 || b.skipped).length;
+    }""")
+    sensitivity = page.inner_text("#sensitivity") if page.locator("#sensitivity").count() else ""
+    step("left-out stat scores 0 for everyone and is shown as a dash", len(turret_rows) == 5
+         and all(skipped and points == 0 for skipped, points in turret_rows) and strip_dashes == full_strip >= 1
+         and "turret damage" not in sensitivity, f"{turret_rows} dashes={strip_dashes}/{full_strip} | {sensitivity[:90]}")
+    page.fill("#importText", pasted)
+    page.click("#importFill")
+    page.click("#analyze")
+    page.wait_for_timeout(300)
+    restored = page.inner_text("article.card.blame .formula")
+    step("entering the stat again brings the full score back", "= 4.0" in restored
+         and "turret damage" in page.inner_text("#sensitivity") and page.locator(".data-warn").count() == 0, restored[-40:])
 
     # Import review: a dropped digit and a missing number are marked, the cursor goes to the first one, fixing clears the mark.
     page.click("#clear")
@@ -497,7 +618,41 @@ with sync_playwright() as p:
     }""")
     step("touch screen: the box to check is brought into view, not focused",
          touch_state == {"marked": 2, "inView": True, "focusedSuspect": False}, json.dumps(touch_state))
+    # v8: on a touch screen every button, link-button and fold-out heading is at least 44px tall.
+    touch_page.fill("#importText", pasted)
+    touch_page.tap("#importFill")
+    touch_page.tap("#analyze")
+    touch_page.wait_for_selector("#shareImage:not([disabled])")
+    touch_page.evaluate("() => { document.getElementById('how').open = true; }")
+    short_targets = touch_page.evaluate("""() => [...document.querySelectorAll("button, .btn, summary, .link")]
+        .filter((el) => el.checkVisibility())
+        .map((el) => [el.id || el.textContent.trim().slice(0, 24), Math.round(el.getBoundingClientRect().height * 10) / 10])
+        .filter(([, height]) => height < 44)""")
+    measured = touch_page.evaluate("""() => [...document.querySelectorAll("button, .btn, summary, .link")].filter((el) => el.checkVisibility()).length""")
+    step("touch screen: every tap target is at least 44px tall", measured >= 20 and short_targets == [],
+         f"measured={measured} short={short_targets[:6]}")
     touch.close()
+
+    # v8: the smallest phones (320px wide) show the result without sideways scrolling, stat strip included.
+    narrow = browser.new_context(viewport={"width": 320, "height": 700})
+    narrow_page = narrow.new_page()
+    narrow_page.goto(URL)
+    narrow_page.click("#demo")
+    narrow_page.click("#analyze")
+    narrow_page.wait_for_selector("#shareImage:not([disabled])")
+    narrow_fit = narrow_page.evaluate("""() => {
+        const strip = document.querySelector("article.card.blame .mini");
+        const columns = [...strip.children].map((c) => c.getBoundingClientRect());
+        return {
+          strip: strip.scrollWidth <= strip.clientWidth,
+          page: document.documentElement.scrollWidth <= innerWidth,
+          columnsInside: columns.every((r) => r.left >= 0 && r.right <= innerWidth),
+          columns: columns.length,
+        };
+    }""")
+    step("320px phone: result and stat strip fit without sideways scrolling",
+         narrow_fit == {"strip": True, "page": True, "columnsInside": True, "columns": 7}, json.dumps(narrow_fit))
+    narrow.close()
 
     # Clipboard offer: only when reading is already allowed, never filled without a tap, each text offered once.
     clip_context = browser.new_context(viewport={"width": 390, "height": 800})

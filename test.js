@@ -61,6 +61,35 @@ const edge = analyzeMatch({
 assert.ok(edge.players.every((p) => Number.isFinite(p.score)));
 assert.ok(Math.abs(sumShares(edge) - 1) < 1e-9);
 
+// 4b. A column nobody filled in is left out (neutral for everyone) instead of scoring -1 for the whole squad.
+const blankTurret = analyzeMatch({ result: "lose", players: loss.players.map((p) => ({ ...p, turret: 0 })) });
+for (const p of blankTurret.players) {
+  const row = p.breakdown.find((b) => b.stat === "turret");
+  assert.strictEqual(row.skipped, true);
+  assert.strictEqual(row.value, 0);
+  assert.strictEqual(row.points, 0);
+  assert.ok(/left out/.test(row.text) && /left out/.test(row.brief), row.text);
+  // Every other stat is untouched by the blank column.
+  const before = byName(loss, p.name).breakdown;
+  for (const b of p.breakdown) {
+    if (b.stat === "turret") continue;
+    assert.strictEqual(b.skipped, false);
+    assert.ok(Math.abs(b.points - before.find((x) => x.stat === b.stat).points) < 1e-9, `${p.name} ${b.stat}`);
+  }
+  // The score is the base 6 plus the remaining stats, with nothing taken off for the blank column.
+  const rebuilt = 6 + p.breakdown.reduce((t, b) => t + b.points, 0);
+  assert.ok(Math.abs(Math.min(10, Math.max(0, rebuilt)) - p.rawScore) < 1e-9, p.name);
+}
+assert.strictEqual(byName(blankTurret, "Darren").verdict, "Most to blame");
+assert.ok(blankTurret.call.deciders.every((d) => d.stat !== "turret"));
+// One player's blank is still a real 0: the column is only left out when the whole squad has none.
+const oneBlank = analyzeMatch({ result: "lose", players: loss.players.map((p) => (p.name === "Kai" ? { ...p, turret: 0 } : p)) });
+assert.ok(oneBlank.players.every((p) => p.breakdown.every((b) => b.skipped === false)));
+assert.strictEqual(byName(oneBlank, "Kai").breakdown.find((b) => b.stat === "turret").value, -1);
+// The entered example is unchanged by this rule.
+assert.ok(loss.players.every((p) => p.breakdown.every((b) => b.skipped === false)));
+assert.deepStrictEqual(loss.players.map((p) => p.sharePct), [10, 15, 14, 43, 18]);
+
 // 5. Displayed whole percents always sum to exactly 100 (example loss used to show 101).
 for (const a of [loss, win, avg, edge]) {
   assert.strictEqual(a.players.reduce((t, p) => t + p.sharePct, 0), 100);
@@ -194,7 +223,7 @@ assert.ok(loss.call.deciders.some((d) => d.stat === "deaths" && d.text === "11 v
 assert.ok(win.call.deciders[0].points > 0);
 
 // 14. Sensitivity: a clear call survives 3 fewer deaths and a 10% swing in every other stat; a near-tie flips on the first death.
-const { swing, swings, runnerUp: lossRunner, holds: lossHolds, ...lossDeaths } = loss.call.sensitivity;
+const { swing, swings, kills: lossKills, assists: lossAssists, runnerUp: lossRunner, holds: lossHolds, ...lossDeaths } = loss.call.sensitivity;
 assert.deepStrictEqual(lossDeaths, { flips: false, steps: 3, to: null });
 assert.strictEqual(swing, 0.1);
 assert.deepStrictEqual(swings.map((s) => s.stat), ["gold", "damage", "taken", "turret"]);
@@ -240,8 +269,41 @@ const runnerOnlyCheck = runnerOnly.call.sensitivity;
 assert.strictEqual(runnerOnlyCheck.runnerUp.name, runnerOnly.call.runnerUp);
 // The runner-up in a win is helped: deaths go down and stop at 0, so at most 1 step is tried for a 1-death game.
 assert.ok(runnerOnlyCheck.runnerUp.steps <= 1, JSON.stringify(runnerOnlyCheck.runnerUp));
-const anyFlip = (c) => c.flips || c.swings.some((s) => s.flips);
+const anyFlip = (c) => c.flips || c.kills.flips || c.assists.flips || c.swings.some((s) => s.flips);
 assert.strictEqual(runnerOnlyCheck.holds, !anyFlip(runnerOnlyCheck) && !anyFlip(runnerOnlyCheck.runnerUp));
+
+// 14d. Kills and assists get the same 1-2-3 step check as deaths, on both players.
+assert.deepStrictEqual(lossKills, { flips: false, steps: 3, to: null });
+assert.deepStrictEqual(lossAssists, { flips: false, steps: 3, to: null });
+// The runner-up of the example loss (Kai, 0 kills) is moved towards the blamed player: no kills to take away.
+assert.strictEqual(byName(loss, lossRunner.name).kills, 0);
+assert.deepStrictEqual(lossRunner.kills, { flips: false, steps: 0, to: null });
+assert.deepStrictEqual(lossRunner.assists, { flips: false, steps: 3, to: null });
+// A near-tie flips on a kill or an assist too, and the flip is reported with the step and the new name.
+for (const stat of ["kills", "assists"]) {
+  const own = nearTie.call.sensitivity[stat];
+  assert.ok(own.flips && own.steps >= 1 && own.steps <= 3 && own.to === nearTie.call.runnerUp, `${stat}: ${JSON.stringify(own)}`);
+  const other = tieRunner[stat];
+  assert.ok(other.flips && other.steps >= 1 && other.steps <= 3 && other.to === tieRunner.name, `${stat}: ${JSON.stringify(other)}`);
+}
+// `holds` is only claimed when no check flips, on either player, in every sample match.
+for (const a of [loss, win, avg, nearTie, runnerOnly]) {
+  const s = a.call.sensitivity;
+  assert.strictEqual(s.holds, !anyFlip(s) && !anyFlip(s.runnerUp));
+  for (const c of [s, s.runnerUp]) {
+    for (const stepped of [c, c.kills, c.assists]) {
+      assert.ok(stepped.steps >= 0 && stepped.steps <= 3 && stepped.flips === (stepped.to !== null), JSON.stringify(stepped));
+    }
+  }
+}
+// A reported flip is real: replaying the reported change by hand moves the call to the reported player.
+const tieKills = nearTie.call.sensitivity.kills;
+const tieCalled = nearTie.players.find((p) => p.verdict === "Most to blame" || p.verdict === "MVP");
+const replayed = analyzeMatch({
+  result: nearTie.result,
+  players: nearTie.players.map((p) => (p === tieCalled ? { ...p, kills: p.kills + (nearTie.result === "win" ? -1 : 1) * tieKills.steps } : p)),
+});
+assert.strictEqual(replayed.players.find((p) => p.verdict === tieCalled.verdict).name, tieKills.to);
 
 // 14c. Every stat row carries the two numbers its result is computed from, so the worked example can be rebuilt from them.
 for (const a of [loss, win, avg]) {

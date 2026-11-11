@@ -46,6 +46,10 @@ function shareScore(actual, expected) {
   return expected > 0 ? clamp(actual / expected - 1, -1, 1) : 0;
 }
 
+// Stats that can be left blank for the whole squad (the post-match screen does not always show them).
+const OPTIONAL_STATS = ["gold", "damage", "taken", "turret"];
+const leftOut = (stat) => `${LABELS[stat]} not entered for anyone - left out of the score`;
+
 // Score every player (no verdicts yet). Returns { totals, results }.
 function scorePlayers(players) {
   const total = (key) => sum(players.map((p) => p[key]));
@@ -80,6 +84,13 @@ function scorePlayers(players) {
     for (const stat of ["gold", "damage", "taken", "turret", "kp"]) {
       stats[stat].value = shareScore(stats[stat].actual, stats[stat].expected);
     }
+    // A column nobody filled in (team total 0) is left out: it counts as "as expected" for everyone
+    // instead of -1, which would hit roles unevenly because their weights for that stat differ.
+    for (const stat of OPTIONAL_STATS) {
+      if (totals[stat] > 0) continue;
+      stats[stat].value = 0;
+      stats[stat].skipped = true;
+    }
     // Fewer deaths than expected is good; no team deaths at all counts as mildly good for everyone.
     stats.deaths.value = totals.deaths > 0 ? clamp((expDeath - deathShare) / expDeath, -1, 1) : 0.5;
     stats.kda.value = clamp((kda - KDA_TARGET[p.role]) / KDA_TARGET[p.role], -1, 1);
@@ -92,10 +103,11 @@ function scorePlayers(players) {
       actual: stats[stat].actual,
       expected: stats[stat].expected,
       value: stats[stat].value,
+      skipped: Boolean(stats[stat].skipped),
       impact: weights[stat] * stats[stat].value,
       points: 4 * weights[stat] * stats[stat].value,
-      text: describe(stat, stats[stat], p, totals),
-      brief: describeBrief(stat, stats[stat], p),
+      text: stats[stat].skipped ? leftOut(stat) : describe(stat, stats[stat], p, totals),
+      brief: stats[stat].skipped ? leftOut(stat) : describeBrief(stat, stats[stat], p),
       short: describeShort(stat, stats[stat], p),
     }));
     const score = clamp(6 + 4 * sum(breakdown.map((b) => b.impact)), 0, 10);
@@ -146,7 +158,7 @@ function describeShort(stat, s, p) {
     case "kp":     return [pct(s.actual), "kill participation"];
     case "deaths": return [String(p.deaths), "deaths"];
     case "kda":    return [s.actual.toFixed(1), "KDA"];
-    default:       return [pct(s.expected > 0 ? s.actual / s.expected : 0), `of their role's usual ${LABELS[stat].toLowerCase()}`];
+    default:       return [s.skipped ? "–" : pct(s.expected > 0 ? s.actual / s.expected : 0), `of their role's usual ${LABELS[stat].toLowerCase()}`];
   }
 }
 
@@ -217,9 +229,9 @@ function deciders(top, next, won) {
     .slice(0, 2);
 }
 
-// Would the call survive a slightly different game? The same two checks are run on both players
+// Would the call survive a slightly different game? The same checks are run on both players
 // the call hangs on, one player and one stat at a time:
-// 1. deaths changed by 1, 2 and 3: the first change that flips the call is reported;
+// 1. deaths, kills and assists each changed by 1, 2 and 3: the first change that flips the call is reported;
 // 2. gold, hero damage, damage taken and turret damage each moved by 10%.
 // The called player is moved towards the runner-up (better in a loss, worse in a win) and the
 // runner-up is moved towards the called player (worse in a loss, better in a win).
@@ -242,24 +254,34 @@ function callSensitivity(players, won) {
       const now = callAfter({ [stat]: players[who][stat] * factor });
       return { stat, label: LABELS[stat].toLowerCase(), flips: now !== original, to: now !== original ? players[now].name : null };
     });
-    const deathCheck = { flips: false, steps: 0, to: null };
-    for (let n = 1; n <= SENSITIVITY_STEPS; n++) {
-      const deaths = players[who].deaths + (better ? -n : n);
-      if (deaths < 0) break;
-      deathCheck.steps = n;
-      const now = callAfter({ deaths });
-      if (now !== original) {
-        deathCheck.flips = true;
-        deathCheck.to = players[now].name;
-        break;
+    // Move one counted stat by 1, 2, 3 (never below 0) and stop at the first change that flips the call.
+    const stepCheck = (stat, direction) => {
+      const result = { flips: false, steps: 0, to: null };
+      for (let n = 1; n <= SENSITIVITY_STEPS; n++) {
+        const value = players[who][stat] + direction * n;
+        if (value < 0) break;
+        result.steps = n;
+        const now = callAfter({ [stat]: value });
+        if (now !== original) {
+          result.flips = true;
+          result.to = players[now].name;
+          break;
+        }
       }
-    }
-    return { ...deathCheck, swings };
+      return result;
+    };
+    // Fewer deaths is better; more kills and more assists are better. Deaths stay at the top level.
+    return {
+      ...stepCheck("deaths", better ? -1 : 1),
+      kills: stepCheck("kills", better ? 1 : -1),
+      assists: stepCheck("assists", better ? 1 : -1),
+      swings,
+    };
   };
 
   const called = check(original, !won);
   const runnerUp = { name: players[runner].name, ...check(runner, won) };
-  const anyFlip = (c) => c.flips || c.swings.some((s) => s.flips);
+  const anyFlip = (c) => c.flips || c.kills.flips || c.assists.flips || c.swings.some((s) => s.flips);
   return { ...called, swing: SENSITIVITY_SWING, runnerUp, holds: !anyFlip(called) && !anyFlip(runnerUp) };
 }
 

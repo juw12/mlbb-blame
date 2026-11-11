@@ -25,17 +25,17 @@ Round 6 (v7) - the nine suggestions left on v6:
 - [x] Tests on v7: node test.js, e2e 76/76, offline 7/7, gates 5/5
 - [x] Council on v7: score 9.3, pairwise v7 > v6 3-0
 Round 7 (v8) - the nine suggestions the council made on v7 (joined the queue in this run):
-- [ ] 10. Pega-Vision + GLM-5.3-Flash: smallest text up to 12px
-- [ ] 11. GLM-5.3-Flash: sensitivity also tests kills and assists (kill participation)
-- [ ] 12. Pega-Thinking: the "Holds up / Could flip" line gets its own visual treatment
-- [ ] 13. Pega-Thinking: "estimates, not official data" caveat next to the verdict and in "How is this calculated?"
-- [ ] 14. Pega-Thinking: "How is this calculated?" as a short plain summary with the detail behind expanders
-- [ ] 15. Pega-Vision: worked example collapsed by default
-- [ ] 16. GLM-5.3-Flash: fetch the screenshot reader in the background so the first read does not wait
-- [ ] 17. Pega-Vision: faster phone entry (auto-advance, touch targets, turret damage optional)
-- [ ] 18. Pega-Vision: compact chat-ready share image
-- [ ] Tests on v8
-- [ ] Council on v8 (keep only if it wins the pairwise against v7)
+- [x] 10. Pega-Vision + GLM-5.3-Flash: smallest text up to 12px
+- [x] 11. GLM-5.3-Flash: sensitivity also tests kills and assists (kill participation)
+- [x] 12. Pega-Thinking: the "Holds up / Could flip" line gets its own visual treatment
+- [x] 13. Pega-Thinking: "estimates, not official data" caveat next to the verdict and in "How is this calculated?"
+- [x] 14. Pega-Thinking: "How is this calculated?" as a short plain summary with the detail behind expanders
+- [x] 15. Pega-Vision: worked example collapsed by default
+- [x] 16. GLM-5.3-Flash: fetch the screenshot reader in the background so the first read does not wait
+- [x] 17. Pega-Vision: faster phone entry (touch targets 44px, a column left blank by everyone is skipped; auto-advance declined: the app cannot know when a number is complete)
+- [x] 18. Pega-Vision: compact chat-ready share image
+- [x] Tests on v8: node test.js, e2e 89/89, offline 7/7, gates 5/5
+- [x] Council on v8: score 9.0 (v7 9.3), pairwise v8 > v7 3-0, both orders agree; kept on the pairwise, stop: plateau
 Sync and close:
 - [ ] Repo pushed, live site serves the kept version
 - [ ] Landing page /p/mlbb-blame/
@@ -59,6 +59,14 @@ blamed player accepts the numbers.
 - Assumed (round 6): the clipboard offer appears only when clipboard reading is already granted (Chromium) and never prompts; the last 8 used or dismissed texts are remembered so they are not offered again.
 - Assumed (round 6): breakdowns start closed except on the called player; Clear all restores the remembered result; the example's result is not remembered; review marks do not survive a reload.
 - Assumed (round 6): v7 kept on a 3-0 pairwise with a 0.0 score gain, the same way rounds 4 and 5 were kept; recorded as a plateau round.
+- Assumed (round 7): a column left blank for the whole squad counts as "as expected" (0 points) for everyone instead of -1, and adds a mild caveat to the confidence chip.
+- Assumed (round 7): the what-if steps for kills and assists are +-1..3 and never go below 0.
+- Assumed (round 7): auto-advance between boxes is declined (the app cannot know when a number is complete; the "2/11/3" shorthand and the Next key already exist).
+- Assumed (round 7): the share image default stays Detailed (1080x1560); the Compact choice (1080x1080) is remembered.
+- Assumed (round 7): the copied chat text does not carry the estimates caveat (kept short); the caveat sits next to the verdict and in "How is this calculated?".
+- Assumed (round 7): the screenshot reader is never fetched in the background on metered or data-saver connections, or without a service-worker controller.
+- Assumed (round 7): v8 is kept on the unanimous pairwise (3-0, both orders) although its single absolute score (9.0) is 0.3 under v7's (9.3); this is the same call as rounds 2 and 4-6, where the pairwise decided and the absolute run was treated as within judge spread. The strict rule (score >= best + MIN_GAIN) would have reverted it.
+- Assumed (round 7): the loop ends here on PLATEAU (2 rounds in this run under MIN_GAIN: +0.0, then -0.3). The nine suggestions the council made on v8 are closed by the stop rule with a reason each (not implemented) and are not carried as next items; they are not added to Precedent/Queue.md because the request was "no more next or open items".
 
 ## Rounds
 | round | change | gates | judge score | pairwise win | kept? | note |
@@ -216,3 +224,68 @@ Council suggestions on v7 (all nine joined the run queue as items 10-18 for roun
   sensitivity line; the estimates caveat nearer the verdict.
 - GLM-5.3-Flash: test kill participation in the sensitivity check; fetch the OCR assets ahead of first use;
   raise the smallest type sizes.
+
+## Round 7 (2026-11-12) - v8
+
+Targets: all nine council suggestions made on v7 (run queue items 10-18).
+
+Changes (v8):
+- Smallest text is 12px (`.score small`, `.mini > span`, `table.history td::before`).
+- What-if check also moves kills and assists by 1 to 3 (never below 0) for the called player and the runner-up.
+- The "Holds up" / "Could flip" line is its own box (`#sensitivity`, class `sens holds` or `sens flips`) with a bold lead.
+- Estimates note under the verdict (`#estimateNote`) and in "How is this calculated?": role averages and weights are
+  this app's own estimates, not official Moonton data.
+- "How is this calculated?" opens on a three-sentence summary, the estimates note and "Not measured"; the worked
+  example, formula, confidence rules, role reasons and bar key sit in five closed fold-outs. "How is this decided?"
+  opens the section and the confidence fold-out.
+- Screenshot reader warm-up: `loadScript` is memoised; `warmOcr()` runs when the import box opens or a screenshot
+  button is touched or focused, and in idle time only if the reader is already saved or the connection is 4g without
+  data saver. It always needs a service-worker controller.
+- Touch targets are at least 44px under `@media (pointer: coarse)`.
+- A column left blank for the whole squad is left out of the score for everyone (0 points, shown as a dash, one
+  warning, and a clause on the confidence chip).
+- Share image style: Detailed (1080x1560, unchanged) or Compact (1080x1080); the choice is remembered and can be
+  switched from the preview.
+- `sw.js` shell cache bumped to `whothrew-shell-v8`.
+- Item 17's auto-advance was declined (see Assumptions).
+
+Checks: `node test.js` pass (new tests 4b and 14d); `hone/e2e.py` 89/89 PASS (13 new steps); `hone/offline.py` 7/7;
+`hone/check.py v8` gates 5/5 (shares 43/18/15/14/10).
+
+e2e steps changed on purpose (the behaviour they checked moved): "method is open on the first analysis" reads
+`#how` `textContent`, because the formula now sits in a closed fold-out; the worked-example step opens
+`#howWorked` first and keeps its assertions. Added: summary with 5 closed fold-outs, estimates note beside the
+verdict, kills and assists in the what-if for both players, the `sens holds` box, compact image 1080x1080 and its
+download, remembered compact choice, switch back to 1080x1560 from the preview, no text under 12px (including
+`::before` / `::after`), blank turret column reported once plus the chip clause, skipped stat at 0 points and a dash
+for all five players, re-entering the stat restores 4.0, 35 touch targets at 44px or more, 320px without sideways
+scroll. No step was deleted without a replacement.
+
+Council (Pega-Vision, Pega-Thinking, GLM-5.3-Flash): v8 single score 9.0 (v7 was 9.3; judge totals 8.85 / 9.0 / 9.45;
+criterion medians C1 9, C2 9, C3 9, C4 9, C5 9); pairwise v8 > v7 3-0, both orders agree, each judge calling v8 an
+improvement with no regressions. Kept v8 on the pairwise (see Assumptions: the strict score rule would have reverted it).
+The absolute run moved by -0.3: the C3 and C5 medians went from 10 to 9, and C5 (squad tracking) was not touched in v8,
+so that part of the move is run-to-run judge spread, about +-0.3 as in rounds 2 and 4-6. Nothing here is "perfect".
+
+stop: plateau (PLATEAU = 2: round 6 gained 0.0, round 7 gained -0.3; gates 5/5 and the score is above DONE_SCORE 8.5).
+
+Correction: a working note earlier in this session gave the v8 score as 9.85. `hone/shots/v8/score.json` holds one run
+and it says 9.0; 9.0 is the number used everywhere.
+
+Council suggestions on v8 - closed by the stop rule, none implemented, none carried forward:
+- Pega-Vision: calibrate role and hero baselines and show uncertainty. Declined: there is no real match dataset, so
+  it would need invented numbers; the estimates note beside the verdict states this limit.
+- Pega-Vision: shorter phone entry (role from hero, collapse optional columns, one screen per player). Not done:
+  role-from-hero needs a hero table the app does not have. Already there: remembered hero and role per name, Last
+  squad, "2/11/3" shorthand, blank columns skipped.
+- Pega-Vision: pre-render the share image so Share has no "Drawing image..." wait. Already the case since v5 (the PNG
+  is drawn right after analysis; the label only shows while that runs, with a text fallback since v6). No change.
+- Pega-Thinking: move the "Holds up / Could flip" line into the banner. Partly done in v8 (its own coloured box);
+  not moved.
+- Pega-Thinking: make "How is this decided?" a button instead of a link. Not done.
+- Pega-Thinking: open the paste box by default or add a hint. Not done; the one-tap Paste button (v3) and the
+  clipboard offer (v7) fill the form without the box where the browser allows clipboard reading.
+- GLM-5.3-Flash: Web Share Target so a screenshot can be sent to the app from the gallery. Not done: needs an
+  installed PWA on Android and cannot be tested in desktop Chromium here.
+- GLM-5.3-Flash: combined what-ifs (several stats at once). Not done; the line says each change was tried one at a time.
+- GLM-5.3-Flash: wrap the "Less reliable" caveat on the share images instead of squeezing it into one line. Not done.

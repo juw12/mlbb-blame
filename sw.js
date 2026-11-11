@@ -2,7 +2,7 @@
 // 1. Keeps the app itself (page + scripts) available offline: network first, saved copy when the network fails or stalls.
 // 2. Saves the screenshot reader (Tesseract.js from the CDN) the first time it is used, so later reads work offline.
 
-const SHELL_CACHE = "whothrew-shell-v7";
+const SHELL_CACHE = "whothrew-shell-v8";
 const OCR_CACHE = "whothrew-ocr-v1";
 const SHELL = ["./", "index.html", "scoring.js", "importer.js", "manifest.webmanifest", "icon.svg", "icon-192.png"];
 const OCR_HOSTS = ["cdn.jsdelivr.net", "tessdata.projectnaptha.com"];
