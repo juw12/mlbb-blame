@@ -193,8 +193,16 @@ assert.ok(loss.call.deciders.every((d, i, all) => i === 0 || all[i - 1].points >
 assert.ok(loss.call.deciders.some((d) => d.stat === "deaths" && d.text === "11 vs 6 deaths"), JSON.stringify(loss.call.deciders));
 assert.ok(win.call.deciders[0].points > 0);
 
-// 14. Sensitivity: a clear call survives 3 fewer deaths; a near-tie flips on the first one.
-assert.deepStrictEqual(loss.call.sensitivity, { flips: false, steps: 3, to: null });
+// 14. Sensitivity: a clear call survives 3 fewer deaths and a 10% swing in every other stat; a near-tie flips on the first death.
+const { swing, swings, ...lossDeaths } = loss.call.sensitivity;
+assert.deepStrictEqual(lossDeaths, { flips: false, steps: 3, to: null });
+assert.strictEqual(swing, 0.1);
+assert.deepStrictEqual(swings.map((s) => s.stat), ["gold", "damage", "taken", "turret"]);
+assert.deepStrictEqual(swings.map((s) => s.label), ["gold", "hero damage", "damage taken", "turret damage"]);
+assert.ok(swings.every((s) => s.flips === false && s.to === null), JSON.stringify(swings));
+assert.ok(win.call.sensitivity.swings.every((s) => !s.flips));
+const tieSwings = nearTie.call.sensitivity.swings;
+assert.ok(tieSwings.some((s) => s.flips && s.to === nearTie.call.runnerUp), JSON.stringify(tieSwings));
 assert.strictEqual(nearTie.call.sensitivity.flips, true);
 assert.strictEqual(nearTie.call.sensitivity.steps, 1);
 assert.strictEqual(nearTie.call.sensitivity.to, nearTie.call.runnerUp);

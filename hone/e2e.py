@@ -47,6 +47,18 @@ with sync_playwright() as p:
          versus[:110].replace("\n", " | "))
     sensitivity = page.inner_text("#sensitivity") if page.locator("#sensitivity").count() else ""
     step("banner says if the call holds up", "fewer death" in sensitivity and "Darren" in sensitivity, sensitivity)
+    # v6: the points are labelled with their owner, the what-if covers 10% swings, and every card shows a stat strip
+    step("decider points say whose they are", "Darren vs" in versus and "pts for Darren" in versus, versus[:140].replace("\n", " | "))
+    step("what-if also covers 10% stat swings", "10% more gold" in sensitivity and "turret damage" in sensitivity, sensitivity)
+    strip_columns = page.locator("article.card.blame .mini > span").count()
+    strip_seen = page.locator("article.card.blame .mini").is_visible()
+    strip_label = page.get_attribute("article.card.blame .mini", "aria-label") or ""
+    step("card shows a 7-stat strip without opening anything", strip_columns == 7 and strip_seen and "Deaths" in strip_label,
+         f"columns={strip_columns} visible={strip_seen} | {strip_label[:80]}")
+    share_label = page.inner_text("#shareImage")
+    step("share button is ready and labelled", page.locator("#shareImage").is_enabled() and share_label == "Share result image", share_label)
+    best_effort = page.inner_text("article.card.mvp .stamp") if page.locator("article.card.mvp .stamp").count() else ""
+    step("best player on a losing team is stamped Best effort", best_effort.strip().lower() == "best effort", best_effort)
     step("method is open on the first analysis", page.evaluate("() => document.getElementById('how').open")
          and "6 + 4" in page.inner_text("#how"))
     step("example squad is not remembered", page.locator("#lastSquad").is_hidden() and page.locator("#forgetPlayers").is_hidden())
@@ -62,6 +74,7 @@ with sync_playwright() as p:
     clip = page.evaluate("() => navigator.clipboard.readText()")
     step("copy text has blame line", "most to blame: Darren" in clip, clip.splitlines()[0] if clip else "")
     step("copy text names heroes", "Fanny" in clip and "Tigreal" in clip)
+    step("copy text carries the what-if line, no caveat for full data", "Holds up" in clip and "Data note" not in clip)
 
     page.click("#shareImage")
     page.wait_for_selector("#sharePreview[open]", timeout=5000)
@@ -82,6 +95,12 @@ with sync_playwright() as p:
     match_scores = page.inner_text(".matches li small")
     step("history shows form bars and every score", form_bars == 5 and "Darren" in match_scores and "Juwen" in match_scores,
          f"bars={form_bars} | {match_scores}")
+    # v6: at phone width the leaderboard is one labelled block per player, not a sideways-scrolling table
+    head_hidden = page.locator("table.history thead").is_hidden()
+    labelled = page.locator("table.history tbody tr:first-child td[data-label]").count()
+    table_fits = page.evaluate("() => { const t = document.querySelector('.table-wrap'); return t.scrollWidth <= t.clientWidth; }")
+    step("phone leaderboard stacks with labels", head_hidden and labelled == 7 and table_fits,
+         f"thead hidden={head_hidden} labelled={labelled} fits={table_fits}")
 
     page.click("[data-delete]")
     page.wait_for_timeout(200)
@@ -126,6 +145,14 @@ with sync_playwright() as p:
     page.fill(".pcard:nth-child(2) [data-f=gold]", "abc")
     page.click("#analyze")
     step("bad number shows error", "not a valid number" in page.inner_text("#error"))
+
+    # v6: Clear all can be undone
+    page.click("#clear")
+    cleared = page.eval_on_selector_all("[data-f=name]", "els => els.map(e => e.value)")
+    page.click("#toast button")
+    page.wait_for_timeout(200)
+    restored_names = page.eval_on_selector_all("[data-f=name]", "els => els.map(e => e.value)")
+    step("clear all, with undo", all(n == "" for n in cleared) and restored_names[3] == "Darren", f"{cleared} -> {restored_names}")
 
     # v2: import from pasted text
     page.click("#clear")
@@ -198,6 +225,13 @@ with sync_playwright() as p:
     step("blank stat and 4 players are warned", "Only 4 of 5" in warn_text and "Kai: Turret dmg left blank" in warn_text, warn_text[:120])
     chip_text = page.inner_text(".banner .chip")
     step("chip folds in missing data", "but only 4 of 5 players entered" in chip_text, chip_text)
+    # v6: the caveat travels with the result
+    page.click("#copyText")
+    page.wait_for_timeout(300)
+    caveat_clip = page.evaluate("() => navigator.clipboard.readText()")
+    step("copied text carries the data caveat", "Data note: only 4 of 5 players entered" in caveat_clip, caveat_clip.splitlines()[-2] if caveat_clip else "")
+    taller = page.evaluate("() => [drawResultImage({ ...lastAnalysis, caveat: '' }).height, drawResultImage(lastAnalysis).height]")
+    step("share image makes room for the caveat", taller[1] == taller[0] + 50, str(taller))
 
     # v4: "How is this decided?" opens the explanation with thresholds
     page.click("#howLink")
@@ -247,6 +281,13 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     names = page.eval_on_selector_all("[data-f=name]", "els => els.map(e => e.value)")
     step("clipboard button fills players", names[3] == "Darren", str(names))
+    # v6: the same import as a big button above the form
+    page.click("#clear")
+    page.click("#quickPaste")
+    page.wait_for_timeout(300)
+    names = page.eval_on_selector_all("[data-f=name]", "els => els.map(e => e.value)")
+    box_open = page.evaluate("() => document.getElementById('importBox').open")
+    step("quick paste button fills players", names[3] == "Darren" and box_open and page.locator("#quickShot").is_visible(), str(names))
     page.click("#analyze")
     page.wait_for_timeout(300)
     page.click("article.card.blame details.stats summary")
@@ -310,6 +351,20 @@ with sync_playwright() as p:
     phone_page.wait_for_selector("#sharePreview[open]", timeout=5000)
     step("phone: preview is still one tap away", phone_page.locator("#sharePreviewShare").is_visible() and not phone_errors,
          "; ".join(phone_errors[:2]))
+
+    # v6: a browser that can share words but not files still gets a share button, for the text
+    phone_page.click("#sharePreviewClose")
+    phone_page.evaluate("() => Object.defineProperty(Navigator.prototype, 'canShare', { configurable: true, value: () => false })")
+    phone_page.click("#analyze")
+    phone_page.wait_for_selector("#shareImage:not([disabled])", timeout=5000)
+    phone_page.click("#shareImage")
+    phone_page.wait_for_selector("#sharePreview[open]", timeout=5000)
+    text_label = phone_page.inner_text("#sharePreviewShare")
+    phone_page.click("#sharePreviewShare")
+    phone_page.wait_for_timeout(300)
+    last_share = phone_page.evaluate("() => window.__shares[window.__shares.length - 1]")
+    step("phone without file sharing: shares the text", text_label == "Share text only" and not last_share["files"]
+         and "most to blame: Darren" in last_share["text"] and not phone_errors, f"{text_label} | {json.dumps(last_share)[:90]}")
 
 print("E2E", "OK" if not failures else f"FAILED: {failures}", flush=True)
 os._exit(1 if failures else 0)

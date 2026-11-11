@@ -10,8 +10,9 @@ the **MVP** after a victory, with the reasons in numbers.
 
 ## What it does
 
-- **Fill from a screenshot or pasted text**: copy the text out of your end-of-match screenshot (iPhone Live Text or
-  Google Lens), tap **Paste from clipboard**, and all five players are filled in. Or tap **Read screenshot** to let the app
+- **Fill from a screenshot or pasted text**: two buttons sit right above the form. Copy the text out of your
+  end-of-match screenshot (iPhone Live Text or Google Lens), tap **Paste copied stats**, and all five players are
+  filled in. Or tap **Read a screenshot** to let the app
   read the image itself (Tesseract.js, about 7 MB downloaded once on first use and then kept on the device, so later
   reads work without internet; the image never leaves your phone). Collapsed OCR
   spacing such as "Darren Fanny" is split using a list of MLBB hero names, OCR look-alikes (`7O00`) are corrected, and
@@ -26,23 +27,30 @@ the **MVP** after a victory, with the reasons in numbers.
   the top player is tagged "Nearly as much to blame" / "Almost MVP". A **How is this decided?** link under the verdict
   opens the full explanation (it is already open the first time you analyze a match).
 - **Why this player and not the next one**: the verdict lists the two stats that separate the top two players, with the
-  points each one cost ("11 vs 6 deaths −0.7 pts"), and re-scores the match with up to 3 deaths fewer (loss) or more
-  (win) for the called player: "Holds up" if the call survives, "Could flip" with the number of deaths if it does not.
-- **The maths on every card**: "How 4.0 adds up" shows 6.0 for an average game plus or minus the points from each stat,
-  next to the raw numbers ("11 deaths = 38% of team deaths, about 5 expected").
+  points each one cost ("Darren vs Kai: 11 vs 6 deaths −0.7 pts for Darren"), and re-scores the match for the called
+  player with up to 3 deaths fewer (loss) or more (win), and with 10% more (loss) or less (win) gold, hero damage,
+  damage taken and turret damage, one change at a time: "Holds up" if the call survives all of them, "Could flip"
+  with the change that flips it if not.
+- **The maths on every card**: a strip of seven small bars shows the points each stat added (green) or cost (red), and
+  "How 4.0 adds up" shows 6.0 for an average game plus or minus those points, next to the raw numbers ("11 deaths =
+  38% of team deaths, about 5 expected").
 - **Data warnings**: the result and the confidence chip say so when fewer than 5 players were entered or a stat was left
-  blank (counted as 0), e.g. "Clear call, but only 4 of 5 players entered".
+  blank (counted as 0), e.g. "Clear call, but only 4 of 5 players entered". The same note travels with the copied
+  text ("Data note: …") and the share image.
 - **Share to the squad chat**: on a phone one tap on **Share result image** opens the share sheet with the PNG and the
   text summary (the image is prepared as soon as the result appears); elsewhere it opens a preview with Download. The
-  image labels its columns and the bar ("bar = share of blame"), and the copy-ready text names the runner-up. "Threw" /
-  "Carried" stamps and lane colours on the cards.
+  image labels its columns and the bar ("bar = share of blame"), has a lane-colour stripe per player and a THREW /
+  CARRIED stamp on the top row, and the copy-ready text names the runner-up. If the image can't be made or shared,
+  the button shares the text instead. "Threw" / "Carried" / "Best effort" stamps and lane colours on the cards.
 - **Mobile-first entry**: one card per player, numeric keypad, type or paste `2/11/3` in K to fill K, D and A at once,
-  Enter / Next on the keypad jumps to the next box, the draft is saved as you type, and "Next match" keeps the squad.
+  Enter / Next on the keypad jumps to the next box, the draft is saved as you type, "Next match" keeps the squad, and
+  "Clear all" can be undone.
 - **Remembers your squad**: a name you have analyzed before fills in its hero and role, and **Last squad** refills all
   five and puts the cursor on the first number. The built-in example is never remembered; "Forget saved players"
   (with Undo) clears it all.
 - **Squad history**: leaderboard (average score, MVPs, times most to blame, form over the last 5 matches with an up/down
-  trend), per-match list with every player's score and delete/undo, JSON export/import.
+  trend; stacked into one card per player on phones), per-match list with every player's score and delete/undo, JSON
+  export/import.
   Everything stays in your browser's local storage.
 - **Works offline and installs like an app**: a service worker keeps the page available without a connection, and
   "Add to Home Screen" gives it an icon.
@@ -53,7 +61,8 @@ The role baselines and weights in `scoring.js` are this app's own estimates, not
 can't see rotations, vision, objective calls, the draft or early-game mistakes. Treat the verdict as evidence, not a ruling.
 Screenshot reading was tested on a synthetic dark scoreboard, not on every phone's real MLBB screenshot; always check the
 filled numbers. Offline use was tested in desktop Chromium with the network cut; the phone share sheet and "Add to Home
-Screen" were not tested on a real phone. "Holds up / Could flip" only varies the called player's deaths.
+Screen" were not tested on a real phone. "Holds up / Could flip" only varies the called player's own numbers (deaths
+by up to 3; gold, hero damage, damage taken and turret damage by 10%), one at a time, not the other players'.
 
 ## Run it
 
@@ -64,7 +73,7 @@ link or `python -m http.server` for those.
 
 ```
 node test.js            # scoring + import parser: verdicts, shares sum to 100, point breakdown, sensitivity, edge cases
-python hone/check.py v5 # gates: no console errors, no overflow at 320-1440 px, encoding (needs Playwright)
+python hone/check.py v6 # gates: no console errors, no overflow at 320-1440 px, encoding (needs Playwright)
 python hone/e2e.py      # every button: import, share (desktop + phone share sheet), roster, history, warnings, draft
 python hone/offline.py  # reads a screenshot online once, cuts the network, then opens, analyzes and reads again
 ```

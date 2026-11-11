@@ -98,3 +98,41 @@ pairwise v5 > v4 3-0, both orders agree. Kept v5. Absolute gain 0.0 < MIN_GAIN -
 Remaining council suggestions: data caveats in the shared text and image, clearer "Tried" stamp and decider labels,
 stacked phone layout for the leaderboard, import easier to find, Undo for Clear all, stat bars on each card,
 sensitivity beyond deaths, text-only share fallback, richer share image.
+
+## Round 5 (2026-11-11) - v6
+
+Targets: every remaining v5 council suggestion (data caveats in shared outputs, clearer stamp and decider labels,
+stacked phone leaderboard, easier-to-find import, Undo for Clear all, stat bars on each card, sensitivity beyond deaths,
+text-only share fallback, richer share image).
+
+Changes (v6):
+- Sensitivity also swings gold, hero damage, damage taken and turret damage by 10% for the called player, one at a
+  time, on top of deaths +-3; the line names every change that was tried and the one that flips the call.
+- Deciders name both players and whose points they are ("Darren vs Kai: 11 vs 6 deaths -0.7 pts for Darren").
+- Stat strip on every card: seven small bars for the points each stat added or cost (full height = 1.2 points),
+  with a caption and an aria-label; columns with no weight for the role are faded.
+- "Tried" stamp renamed "Best effort"; every stamp has a tooltip.
+- Data caveat carried into the copied text ("Data note: ...") and drawn on the share image.
+- Share image: lane-colour stripe per row and a rotated THREW / CARRIED stamp on the top row.
+- Share button starts as "Drawing image..." and falls back to "Share result as text" if the PNG cannot be made;
+  the preview dialog offers "Share text only" when files cannot be shared.
+- Leaderboard stacks into one card per player at <= 600 px instead of scrolling sideways.
+- "Read a screenshot" and "Paste copied stats" buttons above the form; stat inputs fit one row label each at 390 px.
+- "Clear all" shows an Undo toast.
+- `sw.js` shell cache bumped to `whothrew-shell-v6`.
+
+Checks: `node test.js` pass (new test 14: stat-swing sensitivity); `hone/e2e.py` 56/56 PASS (12 new steps);
+`hone/offline.py` 7/7; `hone/check.py v6` gates 5/5 (shares 43/18/15/14/10).
+
+Council (Pega-Vision, Pega-Thinking, GLM-5.3-Flash): v6 single score 9.3 (v5 was 9.1; judge totals 8.85 / 9.3 / 9.3);
+pairwise v6 > v5 3-0, both orders agree. Kept v6. Absolute gain 0.2 < MIN_GAIN -> plateau count 2.
+
+Stopped: MAX_ROUNDS (5) reached and PLATEAU (2 rounds under MIN_GAIN) reached in the same round.
+
+Council suggestions left on v6 (not done; two of them pull in opposite directions):
+- Pega-Vision: collapse the stat strips and breakdowns by default to cut result density; label blame share as a
+  relative share of the loss; check the clipboard on load; inline validation of parsed rows.
+- Pega-Thinking: put the bars inside "How X adds up" and on the share image; a worked example in "How is this calculated?".
+- GLM-5.3-Flash: also vary the runner-up's stats in the sensitivity check (or soften "Holds up"); say whose favour
+  the decider points are in; autofocus the first empty stat box and remember the last Victory/Defeat choice.
+
