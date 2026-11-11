@@ -194,7 +194,7 @@ assert.ok(loss.call.deciders.some((d) => d.stat === "deaths" && d.text === "11 v
 assert.ok(win.call.deciders[0].points > 0);
 
 // 14. Sensitivity: a clear call survives 3 fewer deaths and a 10% swing in every other stat; a near-tie flips on the first death.
-const { swing, swings, ...lossDeaths } = loss.call.sensitivity;
+const { swing, swings, runnerUp: lossRunner, holds: lossHolds, ...lossDeaths } = loss.call.sensitivity;
 assert.deepStrictEqual(lossDeaths, { flips: false, steps: 3, to: null });
 assert.strictEqual(swing, 0.1);
 assert.deepStrictEqual(swings.map((s) => s.stat), ["gold", "damage", "taken", "turret"]);
@@ -209,6 +209,58 @@ assert.strictEqual(nearTie.call.sensitivity.to, nearTie.call.runnerUp);
 assert.strictEqual(win.call.sensitivity.flips, false);
 // A blamed player with no deaths has nothing to take away: no steps are tried.
 assert.strictEqual(analyzeMatch({ result: "lose", players: edge.players.map(({ name, role }) => ({ ...twin, name, role, deaths: 0 })) }).call.sensitivity.steps, 0);
+
+// 14b. The same checks run on the runner-up, moved towards the called player (worse in a loss, better in a win).
+assert.strictEqual(lossRunner.name, loss.call.runnerUp);
+assert.deepStrictEqual({ flips: lossRunner.flips, steps: lossRunner.steps, to: lossRunner.to }, { flips: false, steps: 3, to: null });
+assert.deepStrictEqual(lossRunner.swings.map((s) => s.stat), ["gold", "damage", "taken", "turret"]);
+assert.ok(lossRunner.swings.every((s) => !s.flips && s.to === null), JSON.stringify(lossRunner.swings));
+assert.strictEqual(lossHolds, true);
+const winRunner = win.call.sensitivity.runnerUp;
+assert.strictEqual(winRunner.name, win.call.runnerUp);
+assert.strictEqual(win.call.sensitivity.holds, !winRunner.flips && winRunner.swings.every((s) => !s.flips));
+// A near-tie is not allowed to claim it holds, and a runner-up flip always lands on the runner-up.
+assert.strictEqual(nearTie.call.sensitivity.holds, false);
+const tieRunner = nearTie.call.sensitivity.runnerUp;
+assert.strictEqual(tieRunner.name, nearTie.call.runnerUp);
+assert.strictEqual(tieRunner.flips, true);
+assert.strictEqual(tieRunner.steps, 1);
+assert.strictEqual(tieRunner.to, tieRunner.name);
+assert.ok(tieRunner.swings.filter((s) => s.flips).every((s) => s.to === tieRunner.name));
+// A call that only the runner-up can flip: the called player's own checks pass, so `holds` must come from the runner-up.
+const runnerOnly = analyzeMatch({
+  result: "win",
+  players: [
+    { ...twin, name: "Top", role: "Gold Lane", kills: 9, deaths: 0, assists: 6, gold: 12000, damage: 80000 },
+    { ...twin, name: "Next", role: "Jungle", kills: 8, deaths: 1, assists: 6, gold: 11000, damage: 70000 },
+    { ...twin, name: "Rest" },
+  ],
+});
+const runnerOnlyCheck = runnerOnly.call.sensitivity;
+assert.strictEqual(runnerOnlyCheck.runnerUp.name, runnerOnly.call.runnerUp);
+// The runner-up in a win is helped: deaths go down and stop at 0, so at most 1 step is tried for a 1-death game.
+assert.ok(runnerOnlyCheck.runnerUp.steps <= 1, JSON.stringify(runnerOnlyCheck.runnerUp));
+const anyFlip = (c) => c.flips || c.swings.some((s) => s.flips);
+assert.strictEqual(runnerOnlyCheck.holds, !anyFlip(runnerOnlyCheck) && !anyFlip(runnerOnlyCheck.runnerUp));
+
+// 14c. Every stat row carries the two numbers its result is computed from, so the worked example can be rebuilt from them.
+for (const a of [loss, win, avg]) {
+  for (const p of a.players) {
+    for (const b of p.breakdown) {
+      assert.ok(Number.isFinite(b.actual) && Number.isFinite(b.expected), `${p.name} ${b.stat}`);
+      let rebuilt = b.actual / b.expected - 1;
+      if (b.stat === "deaths") rebuilt = (b.expected - b.actual) / b.expected;
+      if (b.stat === "kda") rebuilt = (b.actual - b.expected) / b.expected;
+      assert.ok(Math.abs(Math.min(1, Math.max(-1, rebuilt)) - b.value) < 1e-9, `${p.name} ${b.stat}: ${rebuilt} vs ${b.value}`);
+      assert.ok(Math.abs(4 * b.weight * b.value - b.points) < 1e-9);
+    }
+  }
+}
+// Shares can be rebuilt from the raw scores: (10 - score)^2 over the squad total in a loss, score^2 in a win.
+for (const [a, weight] of [[loss, (p) => (10 - p.rawScore) ** 2], [win, (p) => p.rawScore ** 2]]) {
+  const totalWeight = a.players.reduce((t, p) => t + weight(p), 0);
+  for (const p of a.players) assert.ok(Math.abs(weight(p) / totalWeight - p.share) < 1e-9, p.name);
+}
 
 // 15. Squad stats: lifetime numbers, the last 5 scores, and a trend once there are older games.
 const game = (result, score, verdict = "Okay") => ({ result, players: [{ name: "Darren", score, share: 0.4, verdict }, { name: "kai", score: 6, share: 0.1, verdict: "Okay" }] });
@@ -230,6 +282,33 @@ assert.strictEqual(darrenLong.recentAvg, 8);
 assert.strictEqual(darrenLong.trend, 5);
 assert.strictEqual(squadStats(longHistory).find((s) => s.name === "kai").trend, 0);
 assert.deepStrictEqual(squadStats([]), []);
+
+// 16. Import review: sane rows pass; missing values, a dropped or extra digit and absurd K/D/A are pointed at.
+const { reviewRows } = require("./importer.js");
+const fieldsOf = (review) => review.map((flags) => flags.map((f) => f.field));
+assert.deepStrictEqual(fieldsOf(reviewRows(tidy.players)), [[], [], [], [], []]);
+assert.deepStrictEqual(fieldsOf(reviewRows(win.players)), [[], [], [], [], []]);
+assert.deepStrictEqual(fieldsOf(reviewRows(loss.players)), [[], [], [], [], []]);
+const slipped = tidy.players.map((p) => ({ ...p }));
+delete slipped[1].turret;      // OCR missed the last column
+slipped[2].damage = 812000;    // extra digit
+slipped[3].gold = 760;         // dropped digit
+slipped[4].kills = 60;         // not a real K
+const slippedReview = reviewRows(slipped);
+assert.deepStrictEqual(fieldsOf(slippedReview), [[], ["turret"], ["damage"], ["gold"], ["kills"]]);
+assert.strictEqual(slippedReview[1][0].text, "turret dmg is missing");
+assert.strictEqual(slippedReview[2][0].text, "hero dmg 812,000 looks too high next to the others (an extra digit?)");
+assert.strictEqual(slippedReview[3][0].text, "gold 760 looks too low next to the others (a dropped digit?)");
+assert.strictEqual(slippedReview[4][0].text, "60 kills is unusually high");
+// Partial rows list every missing box; empty rows and text-only rows are left alone; turret 0 is fine, gold 0 is not.
+assert.deepStrictEqual(fieldsOf(reviewRows(partial.players)), [["damage", "taken", "turret"], ["gold", "damage", "taken", "turret"]]);
+assert.deepStrictEqual(fieldsOf(reviewRows([{}, { name: "Solo" }, { kills: "", gold: "" }])), [[], [], []]);
+assert.deepStrictEqual(
+  fieldsOf(reviewRows([{ kills: 1, deaths: 2, assists: 3, gold: 0, damage: 5000, taken: 4000, turret: 0 }])),
+  [["gold"]],
+);
+// A real spread between a carry and a roamer (about 8x hero damage) must not be flagged.
+assert.deepStrictEqual(fieldsOf(reviewRows(win.players.map((p) => (p.name === "E" ? { ...p, damage: 15000 } : p)))), [[], [], [], [], []]);
 
 for (const [label, a] of [["loss", loss], ["win", win]]) {
   console.log(`\n${label}:`);

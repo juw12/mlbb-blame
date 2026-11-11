@@ -201,6 +201,58 @@ function parseStatsText(input) {
   return { players, warnings, result };
 }
 
+// Sanity check on filled-in rows (after an import or while the user fixes them). It never blocks
+// anything: it only points at boxes worth a second look. The thresholds are heuristics for a
+// dropped or doubled digit (7600 read as 760), not game rules.
+// rows: [{ kills, deaths, assists, gold, damage, taken, turret }] with numbers, or "" / undefined when empty.
+// Returns one list per row: [{ field, text }]. Rows with no numbers at all are left alone.
+const REVIEW_FIELDS = ["kills", "deaths", "assists", ...IMPORT_FIELDS];
+const REVIEW_LABELS = { kills: "kills", deaths: "deaths", assists: "assists", ...FIELD_LABELS };
+const REVIEW_RATIO = { gold: 5, damage: 10, taken: 10 }; // this many times above or below the other players
+const REVIEW_MAX_KDA = 40;
+function reviewRows(rows) {
+  const has = (value) => value !== undefined && value !== null && value !== "" && Number.isFinite(Number(value));
+  const median = (values) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+  const show = (value) => Number(value).toLocaleString("en-US");
+  return rows.map((row, index) => {
+    const flags = [];
+    if (!REVIEW_FIELDS.some((field) => has(row[field]))) return flags;
+    for (const field of REVIEW_FIELDS) {
+      const label = REVIEW_LABELS[field];
+      if (!has(row[field])) {
+        flags.push({ field, text: `${label} is missing` });
+        continue;
+      }
+      const value = Number(row[field]);
+      if (["kills", "deaths", "assists"].includes(field)) {
+        if (value > REVIEW_MAX_KDA) flags.push({ field, text: `${value} ${label} is unusually high` });
+        continue;
+      }
+      const ratio = REVIEW_RATIO[field];
+      if (!ratio) continue; // turret damage can honestly be 0 or tiny
+      if (value === 0) {
+        flags.push({ field, text: `${label} is 0` });
+        continue;
+      }
+      const others = rows
+        .filter((other, i) => i !== index && has(other[field]) && Number(other[field]) > 0)
+        .map((other) => Number(other[field]));
+      if (others.length < 2) continue;
+      const typical = median(others);
+      if (value >= typical * ratio) {
+        flags.push({ field, text: `${label} ${show(value)} looks too high next to the others (an extra digit?)` });
+      } else if (value <= typical / ratio) {
+        flags.push({ field, text: `${label} ${show(value)} looks too low next to the others (a dropped digit?)` });
+      }
+    }
+    return flags;
+  });
+}
+
 if (typeof module !== "undefined") {
-  module.exports = { parseStatsText, IMPORT_FIELDS };
+  module.exports = { parseStatsText, reviewRows, IMPORT_FIELDS };
 }

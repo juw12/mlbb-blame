@@ -222,6 +222,21 @@
   .pcard.filled { box-shadow: 0 0 0 2px var(--gold); animation: pulse 1.6s ease-out 2; }
   @keyframes pulse { 0% { box-shadow: 0 0 0 6px rgba(242,193,78,.45); } 100% { box-shadow: 0 0 0 2px var(--gold); } }
   @media (prefers-reduced-motion: reduce) { .pcard.filled { animation: none; } }
+  /* Import review: boxes worth a second look (never blocks Analyze) */
+  .pcard input.suspect { border-color: #ffaa64; box-shadow: 0 0 0 1px #ffaa64; }
+  .pcard .check-note { margin-top: 6px; font-size: 12.5px; color: #ffd2a8; }
+  /* Offer to fill from the clipboard (only when clipboard access was already granted) */
+  .clip-offer { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+  .clip-offer[hidden] { display: none; }
+  .fast .clip-offer button { flex: 0 0 auto; }
+  /* Result: what a share means, and one calculation worked through */
+  .share-note { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+  .share-note .link { margin-left: 4px; }
+  .worked { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: #0a1124; font-size: 13px; color: #d5dbee; }
+  .worked b { color: var(--text); }
+  .worked ol { margin: 6px 0 0; padding-left: 20px; }
+  .worked li { margin: 4px 0; font-variant-numeric: tabular-nums; }
+  details.stats .mini-title { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -246,6 +261,11 @@
       <span class="fast-title">Skip the typing — fill all 5 players in one go:</span>
       <label class="btn" id="quickShot">📷 Read a screenshot<input id="quickImage" type="file" accept="image/*" hidden></label>
       <button id="quickPaste" type="button">📋 Paste copied stats</button>
+      <div class="clip-offer" id="clipOffer" role="status" hidden>
+        <span></span>
+        <button id="clipFill" type="button" class="primary small">Fill them in</button>
+        <button id="clipDismiss" type="button" class="small ghost">Dismiss</button>
+      </div>
     </div>
     <details class="import" id="importBox">
       <summary>Paste box, format and tips</summary>
@@ -316,8 +336,11 @@ const ROSTER_KEY = "mlbb-analyzer-roster";     // { "darren": { name, hero, role
 const SQUAD_KEY = "mlbb-analyzer-squad";       // names, heroes and roles of the last analyzed squad
 const SEEN_HOW_KEY = "mlbb-analyzer-seen-how"; // the method is shown open on the first analysis only
 const OCR_READY_KEY = "mlbb-analyzer-ocr-ready";
+const OUTCOME_KEY = "mlbb-analyzer-outcome";     // the result the user last chose (or a screenshot showed)
+const CLIP_SEEN_KEY = "mlbb-analyzer-clip-seen"; // fingerprint of clipboard text already filled in or dismissed
 const playersEl = document.getElementById("players");
 let outcome = "lose";
+let reviewActive = false;  // after an import, boxes that look off are marked until they are fixed
 let lastAnalysis = null;
 let exampleLoaded = false; // the built-in example must not be remembered as the user's squad
 let shareAsset = null;     // { file, url }: result image rendered right after analysis, so Share is one tap
@@ -403,6 +426,49 @@ function fillPlayers(players) {
     });
   });
   syncRoleColours();
+  reviewActive = false; // only an import switches the review marks on (see applyImport)
+  refreshReview();
+}
+
+// The number boxes as numbers for the import review ("" stays empty; unreadable input counts as missing).
+function reviewInput() {
+  return readRaw().map((raw) => {
+    const row = {};
+    for (const [f] of NUMERIC) {
+      const typed = String(raw[f]).trim();
+      const value = typed === "" ? "" : parseNumber(typed);
+      row[f] = Number.isNaN(value) ? "" : value;
+    }
+    return row;
+  });
+}
+
+// Mark the boxes reviewRows() finds odd (orange border, a note under the card). Returns how many are marked.
+function refreshReview() {
+  const flags = reviewActive ? reviewRows(reviewInput()) : [];
+  let count = 0;
+  [...playersEl.children].forEach((card, i) => {
+    const rowFlags = flags[i] || [];
+    count += rowFlags.length;
+    card.querySelectorAll(".stats-in input").forEach((el) => {
+      const flag = rowFlags.find((entry) => entry.field === el.dataset.f);
+      el.classList.toggle("suspect", Boolean(flag));
+      if (flag) el.title = flag.text;
+      else el.removeAttribute("title");
+    });
+    let note = card.querySelector(".check-note");
+    if (!rowFlags.length) {
+      if (note) note.remove();
+      return;
+    }
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "check-note";
+      card.appendChild(note);
+    }
+    note.textContent = `⚠ Check: ${rowFlags.map((entry) => entry.text).join("; ")}.`;
+  });
+  return count;
 }
 
 function syncRoleColours() {
@@ -411,11 +477,22 @@ function syncRoleColours() {
   });
 }
 
-function setOutcome(value) {
+function showOutcome(value) {
   outcome = value;
-  document.querySelectorAll("#result button").forEach((b) => b.classList.toggle("on", b.dataset.result === value));
+  document.querySelectorAll("#result button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.result === value);
+    b.setAttribute("aria-pressed", String(b.dataset.result === value));
+  });
+}
+
+// remember = the user picked this result (or their screenshot showed it), so an empty form starts on it next time.
+// The built-in example does not count.
+function setOutcome(value, remember = false) {
+  showOutcome(value);
+  if (remember) store.setItem(OUTCOME_KEY, value);
   saveDraft();
 }
+const rememberedOutcome = () => (store.getItem(OUTCOME_KEY) === "win" ? "win" : "lose");
 
 function saveDraft() {
   store.setItem(DRAFT_KEY, JSON.stringify({ outcome, players: readRaw(), example: exampleLoaded }));
@@ -430,10 +507,12 @@ function loadDraft() {
       exampleLoaded = Boolean(draft.example);
       setOutcome(draft.outcome === "win" ? "win" : "lose");
       document.getElementById("draftNote").textContent = "Draft restored";
+      return;
     }
   } catch {
     store.removeItem(DRAFT_KEY);
   }
+  showOutcome(rememberedOutcome()); // no draft: start on the result chosen last time
 }
 
 function loadJson(key, fallback) {
@@ -476,16 +555,20 @@ function recallPlayer(card) {
 }
 
 // Put the cursor in the first empty number box of the first named player.
-function focusFirstEmpty() {
+function focusFirstEmpty(options) {
   for (const card of playersEl.children) {
     if (!card.querySelector("[data-f=name]").value.trim()) continue;
     const empty = NUMERIC.map(([f]) => card.querySelector(`[data-f=${f}]`)).find((el) => el.value.trim() === "");
     if (empty) {
-      empty.focus();
-      return;
+      empty.focus(options);
+      return true;
     }
   }
+  return false;
 }
+// A mouse or trackpad: moving the cursor into a box costs nothing. On a touch screen it would pop the keyboard
+// over the page, so automatic focus (page load, after an import) is limited to this.
+const finePointer = () => Boolean(window.matchMedia && window.matchMedia("(pointer: fine)").matches);
 
 // "+0.3" / "−1.1": score points to one decimal, with a real minus sign.
 function signed(value) {
@@ -546,25 +629,103 @@ function headline(analysis) {
   return { won, top };
 }
 
-// Plain words for the "what if" check: up to 3 deaths, then gold, hero damage, damage taken and turret damage
-// moved by 10% one at a time, all for the called player only.
+// Plain words for the "what if" check. It is run on both players the call hangs on, one change at a time:
+// up to 3 deaths, then gold, hero damage, damage taken and turret damage moved by 10%. The called player is
+// moved towards the runner-up and the runner-up towards the called player.
 function sensitivityText(analysis, top) {
   const s = analysis.call.sensitivity;
   if (!s) return "";
   const won = analysis.result === "win";
   const title = won ? "MVP" : "most to blame";
-  const amount = `${Math.round(s.swing * 100)}% ${won ? "less" : "more"}`;
-  const deathChange = s.steps > 0 ? plural(s.steps, won ? "more death" : "fewer death") : "";
-  if (s.flips) {
-    return `⚖ Could flip: with ${deathChange}, ${s.to} would be ${title} instead of ${top.name}.`;
-  }
+  const percent = Math.round(s.swing * 100);
+  const calledAmount = `${percent}% ${won ? "less" : "more"}`;
+  const runnerAmount = `${percent}% ${won ? "more" : "less"}`;
+  const calledDeaths = (steps) => plural(steps, won ? "more death" : "fewer death");
+  const runnerDeaths = (steps) => plural(steps, won ? "fewer death" : "more death");
+  const instead = (to) => `${to} would be ${title} instead of ${top.name}`;
+  const r = s.runnerUp;
+
+  if (s.flips) return `⚖ Could flip: with ${calledDeaths(s.steps)}, ${instead(s.to)}.`;
   const flipped = s.swings.find((w) => w.flips);
-  if (flipped) {
-    return `⚖ Could flip: with ${amount} ${flipped.label}, ${flipped.to} would be ${title} instead of ${top.name}.`;
-  }
+  if (flipped) return `⚖ Could flip: with ${calledAmount} ${flipped.label}, ${instead(flipped.to)}.`;
+  if (r && r.flips) return `⚖ Could flip: if ${r.name} had ${runnerDeaths(r.steps)}, ${instead(r.to)}.`;
+  const runnerFlipped = r && r.swings.find((w) => w.flips);
+  if (runnerFlipped) return `⚖ Could flip: if ${r.name} had ${runnerAmount} ${runnerFlipped.label}, ${instead(runnerFlipped.to)}.`;
+
   const labels = s.swings.map((w) => w.label);
-  const swingList = `${amount} ${labels.slice(0, -1).join(", ")} or ${labels[labels.length - 1]}`;
-  return `🔒 Holds up: even with ${[deathChange, swingList].filter(Boolean).join(", or ")}, ${top.name} would still be ${title}.`;
+  const swingList = `${calledAmount} ${labels.slice(0, -1).join(", ")} or ${labels[labels.length - 1]}`;
+  const calledPart = [s.steps > 0 ? calledDeaths(s.steps) : "", swingList].filter(Boolean).join(", or ");
+  const holds = `even with ${calledPart}, ${top.name} would still be ${title}`;
+  if (!r) return `🔒 Holds up: ${holds}.`;
+  const runnerPart = [r.steps > 0 ? runnerDeaths(r.steps) : "", `${runnerAmount} of any of those stats`].filter(Boolean).join(" or ");
+  return `🔒 Holds up both ways: ${holds} — and also if ${r.name} had ${runnerPart}.`;
+}
+
+// How far one deciding stat puts the called player from the runner-up, in score points:
+// "leaves Darren 0.7 pts behind" (loss) or "puts C 0.5 pts ahead" (win). Without a name: "0.7 pts behind".
+function deciderGap(decider, won, name = "") {
+  const gap = `${decider.points.toFixed(1)} pts ${won ? "ahead" : "behind"}`;
+  if (!name) return gap;
+  return `${won ? "puts" : "leaves"} ${name} ${gap}`;
+}
+
+// One real calculation from this match, step by step, for the player the call landed on:
+// the stat that moved their score most, then the score, then the share.
+function workedExampleHtml(analysis, top) {
+  const won = analysis.result === "win";
+  const counted = top.breakdown.filter((b) => b.weight > 0);
+  if (!counted.length) return "";
+  const pick = [...counted].sort((a, b) => Math.abs(b.points) - Math.abs(a.points))[0];
+  const percent = (value) => `${(value * 100).toFixed(1)}%`;
+  const plain = (value) => `${value < 0 ? "−" : ""}${Math.abs(value).toFixed(2)}`;
+  const withSign = (value) => `${value < 0 ? "−" : "+"}${Math.abs(value).toFixed(2)}`;
+
+  // Step 2: the stat result, exactly as scoring.js computes it.
+  let raw;
+  let working;
+  if (pick.stat === "kda") {
+    raw = (pick.actual - pick.expected) / pick.expected;
+    working = `(KDA ${pick.actual.toFixed(2)} − target ${pick.expected}) ÷ ${pick.expected}`;
+  } else if (pick.stat === "deaths" && analysis.totals.deaths === 0) {
+    raw = pick.value; // no team deaths at all: a fixed, mildly good result for everyone
+    working = "";
+  } else if (pick.stat === "deaths") {
+    raw = (pick.expected - pick.actual) / pick.expected;
+    working = `(expected share ${percent(pick.expected)} − actual share ${percent(pick.actual)}) ÷ ${percent(pick.expected)}`;
+  } else {
+    raw = pick.expected > 0 ? pick.actual / pick.expected - 1 : 0;
+    working = `actual ${percent(pick.actual)} ÷ expected ${percent(pick.expected)} − 1`;
+  }
+  const limited = Math.abs(raw - pick.value) > 1e-9;
+  const resultLine = working
+    ? `Stat result: ${working} ≈ <b>${plain(raw)}</b>${limited ? `, limited to <b>${plain(pick.value)}</b> (a result stops at −1 and +1)` : ""}.`
+    : `Stat result: nobody on the team died, which counts as <b>${withSign(pick.value)}</b> for every player.`;
+
+  // Step 4: all the stats that count for this role add up to the score.
+  const statPoints = top.breakdown.reduce((total, b) => total + b.points, 0);
+  const uncapped = 6 + statPoints;
+  const capped = uncapped > 10 || uncapped < 0;
+  const scoreLine = `All ${counted.length} stats that count for a ${top.role}: ${counted.map((b) => `${b.label} ${withSign(b.points)}`).join(", ")}.
+    They add up to ≈ ${plain(statPoints)}, so 6 ${statPoints < 0 ? "−" : "+"} ${Math.abs(statPoints).toFixed(2)} ≈ ${uncapped.toFixed(2)}${capped ? `, which stops at ${top.rawScore.toFixed(0)}` : ""}, shown as <b>${top.score.toFixed(1)}</b>.`;
+
+  // Step 5: the share, from every player's score.
+  const ranked = [...analysis.players].sort((a, b) => b.share - a.share);
+  const weight = (p) => (won ? p.rawScore ** 2 : (10 - p.rawScore) ** 2);
+  const total = ranked.reduce((sum, p) => sum + weight(p), 0);
+  const own = won ? `${top.rawScore.toFixed(2)}² ≈ ${weight(top).toFixed(1)}` : `(10 − ${top.rawScore.toFixed(2)})² ≈ ${weight(top).toFixed(1)}`;
+  const shareLine = total > 0
+    ? `Share of ${won ? "credit" : "blame"}: ${own}. The same sum for everyone: ${ranked.map((p) => `${escapeHtml(p.name)} ${weight(p).toFixed(1)}`).join(" + ")} ≈ ${total.toFixed(1)}.
+      ${weight(top).toFixed(1)} ÷ ${total.toFixed(1)} ≈ ${(top.share * 100).toFixed(1)}%, shown as <b>${top.sharePct}%</b> (the ${ranked.length} shares are rounded so they total exactly 100%).`
+    : "";
+
+  return `<div class="worked" id="worked"><b>Worked example from this match: ${escapeHtml(top.name)} (${top.role})</b>
+    <ol>
+      <li>Take the stat that moved the score most, <b>${pick.label}</b>: ${escapeHtml(pick.text)}.</li>
+      <li>${resultLine}</li>
+      <li>Points: 4 × ${pick.weight.toFixed(2)} (${pick.label.toLowerCase()} carries ${Math.round(pick.weight * 100)}% of a ${top.role}'s score) × ${plain(pick.value)} = <b>${withSign(pick.points)}</b>.</li>
+      <li>${scoreLine}</li>
+      ${shareLine ? `<li>${shareLine}</li>` : ""}
+    </ol></div>`;
 }
 
 // "Why Darren and not Kai?": the stats that separate the top two, and whether a slightly different game flips the call.
@@ -575,7 +736,7 @@ function versusHtml(analysis, top) {
   const lines = [];
   if (call.deciders && call.deciders.length) {
     const reasons = call.deciders.map((d) =>
-      `${escapeHtml(d.text)} <span class="pts ${won ? "up" : "down"}">${signed(won ? d.points : -d.points)} pts for ${escapeHtml(top.name)}</span>`);
+      `${escapeHtml(d.text)} <span class="pts ${won ? "up" : "down"}">${deciderGap(d, won, escapeHtml(top.name))}</span>`);
     lines.push(`<div><b>Why ${escapeHtml(top.name)} and not ${escapeHtml(call.runnerUp)} (${call.runnerUpScore.toFixed(1)})?</b> ${escapeHtml(top.name)} vs ${escapeHtml(call.runnerUp)}: ${reasons.join(" · ")}</div>`);
   }
   const whatIf = sensitivityText(analysis, top);
@@ -597,8 +758,10 @@ function renderAnalysis(analysis, warning = "") {
     ? `🏆 Victory — MVP: ${escapeHtml(top.name)}`
     : `💀 Defeat — most to blame: ${escapeHtml(top.name)}`;
   const bannerSub = won
-    ? `${escapeHtml(top.name)} (${top.role}) earned ${top.sharePct}% of the credit with a ${top.score.toFixed(1)} impact score.`
-    : `${escapeHtml(top.name)} (${top.role}) takes ${top.sharePct}% of the blame with a ${top.score.toFixed(1)} impact score.`;
+    ? `${escapeHtml(top.name)} (${top.role}) earned ${top.sharePct}% of the credit for this win, with a ${top.score.toFixed(1)} impact score.`
+    : `${escapeHtml(top.name)} (${top.role}) takes ${top.sharePct}% of the blame for this loss, with a ${top.score.toFixed(1)} impact score.`;
+  // A share only divides this one match between the players entered; the impact score is the grade.
+  const shareNote = `${won ? "Credit" : "Blame"} is split between the ${analysis.players.length} players entered and always adds up to 100%, so a share shows how this one ${won ? "win" : "loss"} divides up — it is not a grade. The impact score out of 10 is the grade.`;
 
   // The method is shown open the first time someone sees a verdict, and stays one tap away after that.
   const firstTime = store.getItem(SEEN_HOW_KEY) !== "1";
@@ -651,9 +814,9 @@ function renderAnalysis(analysis, warning = "") {
       <div class="share">${won ? "Share of credit" : "Share of blame"}: <b>${p.sharePct}%</b>
         <div class="bar"><div style="width:${p.sharePct}%;background:${shareColor}"></div></div></div>
       <ul class="reasons">${reasons || '<li class="meta">Right on the role average everywhere.</li>'}</ul>
-      <div class="mini-title">Points each stat added or cost, against the ${p.role} average</div>
-      <div class="mini" role="img" aria-label="${escapeHtml(stripLabel)}">${strip}</div>
-      <details class="stats"><summary>How ${p.score.toFixed(1)} adds up: stats vs the ${p.role} average</summary>
+      <details class="stats"${p === top ? " open" : ""}><summary>How ${p.score.toFixed(1)} adds up: stats vs the ${p.role} average</summary>
+        <div class="mini-title">Points each stat added or cost, against the ${p.role} average</div>
+        <div class="mini" role="img" aria-label="${escapeHtml(stripLabel)}">${strip}</div>
         ${formula}
         <div class="grid-stats">${statRows}</div></details>
     </article>`;
@@ -674,17 +837,20 @@ function renderAnalysis(analysis, warning = "") {
       <button id="copyText" type="button">Copy text for chat</button>
       <button id="save" type="button">Save to squad history</button>
     </div>
+    <p class="share-note" id="shareNote">${shareNote}
+      <button class="link" id="toggleBreakdowns" type="button">Show every player's breakdown</button></p>
     <div class="cards">${cards}</div>
     <details class="how" id="how"${firstTime ? " open" : ""}><summary>How is this calculated?</summary>
+      ${workedExampleHtml(analysis, top)}
       <ul>
-        <li><b>Impact score = 6 + 4 × the sum of (role weight × stat result)</b>, kept between 0 and 10. A stat result runs from −1 (nothing where the role expects a lot) through 0 (exactly the role's usual share) to +1 (double it). Open “How … adds up” on any card to see the points each stat added or took away.</li>
+        <li><b>Impact score = 6 + 4 × the sum of (role weight × stat result)</b>, kept between 0 and 10. A stat result runs from −1 (nothing where the role expects a lot) through 0 (exactly the role's usual share) to +1 (double it). The worked example above runs these steps on this match, and “How … adds up” on any card shows the points each stat added or took away.</li>
         <li>For every stat the app takes the player's share of the team total and compares it with what their role usually gets (a Roam is expected to have low gold; a Gold Laner low damage taken).</li>
         <li>Each stat is weighted by role (shown as % in the breakdown) and the result is mapped to a 0–10 impact score, where about 6 is an average game. The KDA target is role-aware too: 2.5 for Roam and EXP Lane, 3 for the others.</li>
-        <li>Blame share in a loss is proportional to (10 − score)²; credit share in a win to score². </li>
+        <li>Blame share in a loss is proportional to (10 − score)²; credit share in a win to score². Shares only divide this one match between the players entered and always add up to 100%, so the same score can be a bigger or smaller share in another match. The impact score is the grade; the share is the split.</li>
         <li>How sure the call is depends on the impact-score gap between the top player and the next one: <b>Clear call</b> at ${CLEAR_GAP}+ point, <b>Fairly clear</b> from ${MARGIN_GAP} to ${CLEAR_GAP}, and <b>Close call</b> under ${MARGIN_GAP}. In a close call the runner-up is named and every card within ${MARGIN_GAP} of the top player is tagged, because small stat differences could flip it.</li>
         <li>The chip also says when data is missing (fewer than 5 players or blank stats), since blanks count as 0.</li>
-        <li>“Why X and not Y?” lists the two stats with the biggest point gap between the top two players. “Holds up / Could flip” re-scores the match for the called player with up to 3 deaths fewer (loss) or more (win), and with 10% more (loss) or less (win) gold, hero damage, damage taken and turret damage, one change at a time, to show whether one fight or one more wave would have changed the call.</li>
-        <li>The small bars on every card show the points each stat added (green, up) or cost (red, down); a full-height bar is 1.2 points. Faded columns carry no weight for that role.</li>
+        <li>“Why X and not Y?” lists the two stats with the biggest point gap between the top two players. The points next to each say how far that stat alone leaves the called player behind the runner-up (or, in a win, puts them ahead). “Holds up / Could flip” re-scores the match with one change at a time: the called player with up to 3 deaths fewer (loss) or more (win) and 10% more (loss) or less (win) gold, hero damage, damage taken and turret damage, then the runner-up moved the opposite way by the same amounts. “Holds up both ways” means none of those changes moves the call to someone else, so one fight or one more wave would not have changed it.</li>
+        <li>The small bars inside “How … adds up” (open on the called player's card; “Show every player's breakdown” opens the rest) and on the result image show the points each stat added (green, up) or cost (red, down); a full-height bar is 1.2 points. Faded columns carry no weight for that role.</li>
         <li>Not measured: map awareness, vision, rotations, objective calls, the draft and early-game mistakes.</li>
       </ul>
     </details>`;
@@ -698,14 +864,32 @@ function renderAnalysis(analysis, warning = "") {
     how.open = true;
     how.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+  // One button opens every card's breakdown, or closes them all once they are all open.
+  const breakdowns = [...document.querySelectorAll("#output details.stats")];
+  const toggle = document.getElementById("toggleBreakdowns");
+  const allOpen = () => breakdowns.every((d) => d.open);
+  const syncToggle = () => {
+    toggle.textContent = allOpen() ? "Hide all breakdowns" : "Show every player's breakdown";
+    toggle.setAttribute("aria-expanded", String(allOpen()));
+  };
+  toggle.onclick = () => {
+    const open = !allOpen();
+    breakdowns.forEach((d) => {
+      d.open = open;
+    });
+    syncToggle();
+  };
+  breakdowns.forEach((d) => d.addEventListener("toggle", syncToggle));
+  syncToggle();
 }
 
 function summaryText(analysis) {
   const { won, top } = headline(analysis);
   const ranked = [...analysis.players].sort((a, b) => b.score - a.score);
   const lines = [
-    won ? `🏆 MLBB Victory — MVP: ${top.name} (${heroRole(top)}, ${top.kills}/${top.deaths}/${top.assists}) ${top.sharePct}% of the credit`
-        : `💀 MLBB Defeat — most to blame: ${top.name} (${heroRole(top)}, ${top.kills}/${top.deaths}/${top.assists}) ${top.sharePct}% of the blame`,
+    `${won ? `🏆 MLBB Victory — MVP: ${top.name} (${heroRole(top)}, ${top.kills}/${top.deaths}/${top.assists}) ${top.sharePct}% of the credit`
+           : `💀 MLBB Defeat — most to blame: ${top.name} (${heroRole(top)}, ${top.kills}/${top.deaths}/${top.assists}) ${top.sharePct}% of the blame`
+    } (shares add up to 100% across the ${analysis.players.length} players)`,
     `${analysis.call.label} (${analysis.call.gap.toFixed(1)} pts gap${analysis.call.close && analysis.call.runnerUp ? `; runner-up ${analysis.call.runnerUp}` : ""})`,
     "",
     ...ranked.map((p) => `${p.score.toFixed(1)}  ${p.name} · ${heroRole(p)} · ${p.kills}/${p.deaths}/${p.assists} · ${verdictLabel(p.verdict)}`),
@@ -714,7 +898,7 @@ function summaryText(analysis) {
   ];
   const { deciders, runnerUp } = analysis.call;
   if (runnerUp && deciders && deciders.length) {
-    lines.push(`Why not ${runnerUp}: ${deciders.map((d) => d.text).join("; ")}`);
+    lines.push(`Why not ${runnerUp}: ${deciders.map((d) => `${d.text} (${deciderGap(d, won)})`).join("; ")}`);
   }
   const whatIf = sensitivityText(analysis, top);
   if (whatIf) lines.push(whatIf);
@@ -786,7 +970,8 @@ function drawResultImage(analysis) {
   const why = (won ? top.strengths : top.weaknesses).slice(0, 2).map((b) => b.brief).join(" · ");
   const BAR_WIDTH = 720;
   const ROWS_TOP = analysis.caveat ? 470 : 420; // a data caveat gets its own line above the rows
-  const H = ROWS_TOP + 20 + ranked.length * 150 + 120;
+  const ROW_PITCH = 200;                        // each row: name, share bar and the points-per-stat strip
+  const H = ROWS_TOP + 20 + ranked.length * ROW_PITCH + 120;
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
@@ -823,16 +1008,16 @@ function drawResultImage(analysis) {
   }
   g.fillStyle = "#9aa4c2";
   g.font = "700 24px system-ui, Segoe UI, sans-serif";
-  g.fillText(`PLAYER · HERO · K/D/A · BAR = SHARE OF ${won ? "CREDIT" : "BLAME"}`, 80, ROWS_TOP - 38);
+  g.fillText(`PLAYER · HERO · K/D/A · BAR = SHARE OF ${won ? "CREDIT" : "BLAME"} (TOTAL 100%)`, 80, ROWS_TOP - 38, W - 320);
   g.textAlign = "right";
   g.fillText("IMPACT /10", W - 80, ROWS_TOP - 38);
   g.textAlign = "left";
   ranked.forEach((p, i) => {
-    const y = ROWS_TOP + i * 150;
+    const y = ROWS_TOP + i * ROW_PITCH;
     g.fillStyle = i === 0 ? "rgba(255,255,255,.07)" : "rgba(255,255,255,.035)";
-    g.fillRect(50, y - 20, W - 100, 130);
+    g.fillRect(50, y - 20, W - 100, ROW_PITCH - 14);
     g.fillStyle = ROLE_COLOUR[p.role] || "#9aa4c2";
-    g.fillRect(50, y - 20, 10, 130);
+    g.fillRect(50, y - 20, 10, ROW_PITCH - 14);
     g.fillStyle = "#eef1f8";
     g.font = "800 42px system-ui, Segoe UI, sans-serif";
     g.fillText(p.name, 80, y + 30, 560);
@@ -868,7 +1053,36 @@ function drawResultImage(analysis) {
     g.fillRect(80, y + 88, BAR_WIDTH, 12);
     g.fillStyle = won ? "#f2c14e" : accent;
     g.fillRect(80, y + 88, BAR_WIDTH * (p.sharePct / 100), 12);
+    // Points per stat, the same strip as inside the card: a bar up (added) or down (cost), then label and points.
+    const STRIP_TOP = y + 116;
+    const HALF = 20;
+    const cell = BAR_WIDTH / p.breakdown.length;
+    p.breakdown.forEach((b, column) => {
+      const x = 80 + column * cell;
+      const counted = b.weight > 0;
+      const up = b.points >= 0;
+      g.globalAlpha = counted ? 1 : 0.4; // faded: this stat carries no weight for the role
+      g.fillStyle = "#0a1124";
+      g.fillRect(x, STRIP_TOP, 14, HALF * 2);
+      if (counted) {
+        const height = Math.max(2, Math.min(1, Math.abs(b.points) / MINI_FULL_SCALE) * HALF);
+        g.fillStyle = up ? "#3fd391" : "#ff6b78";
+        g.fillRect(x + 2, up ? STRIP_TOP + HALF - height : STRIP_TOP + HALF, 10, height);
+      }
+      g.fillStyle = "#3a4670";
+      g.fillRect(x, STRIP_TOP + HALF, 14, 1);
+      g.fillStyle = "#9aa4c2";
+      g.font = "500 17px system-ui, Segoe UI, sans-serif";
+      g.fillText(MINI_LABEL[b.stat], x + 21, STRIP_TOP + 15, cell - 26);
+      g.fillStyle = counted ? (up ? "#3fd391" : "#ff6b78") : "#9aa4c2";
+      g.font = "700 19px system-ui, Segoe UI, sans-serif";
+      g.fillText(counted ? signed(b.points) : "–", x + 21, STRIP_TOP + 37, cell - 26);
+      g.globalAlpha = 1;
+    });
   });
+  g.fillStyle = "#9aa4c2";
+  g.font = "500 22px system-ui, Segoe UI, sans-serif";
+  g.fillText("Small bars: score points each stat added (up) or cost (down) against the role average", 70, H - 100, W - 140);
   g.fillStyle = "#6c7697";
   g.font = "500 26px system-ui, Segoe UI, sans-serif";
   g.fillText("Who Threw? · role-aware MLBB blame & MVP analyzer", 70, H - 50);
@@ -1136,14 +1350,85 @@ function applyImport(text) {
     return row;
   });
   fillPlayers(merged);
+  reviewActive = true; // from here until the next fill, boxes that look off stay marked while they are fixed
+  const flagged = refreshReview();
   exampleLoaded = false;
   [...playersEl.children].forEach((card, i) => card.classList.toggle("filled", i < players.length));
-  if (result) setOutcome(result);
+  if (result) setOutcome(result, true);
   saveDraft();
+  markClipSeen(text); // this text is used: do not offer it again from the clipboard
+  hideClipOffer();
   const resultNote = result ? ` Result set to ${result === "win" ? "Victory" : "Defeat"}.` : "";
   const warnNote = warnings.length ? ` Check: ${warnings.join("; ")}.` : "";
-  setImportStatus(`Filled ${players.length} player${players.length > 1 ? "s" : ""} (highlighted) — check the numbers and roles, then Analyze.${resultNote}${warnNote}`, warnings.length > 0);
+  const reviewNote = flagged
+    ? ` ⚠ ${flagged} box${flagged === 1 ? " looks off or is" : "es look off or are"} missing (marked in orange).`
+    : "";
+  setImportStatus(`Filled ${players.length} player${players.length > 1 ? "s" : ""} (highlighted) — check the numbers and roles, then Analyze.${resultNote}${warnNote}${reviewNote}`, warnings.length > 0 || flagged > 0);
+  // Take the user to the first thing to check. With a mouse the cursor goes into the box; on a touch screen
+  // the box is only scrolled into view, so the keyboard does not cover the page.
+  const suspect = playersEl.querySelector("input.suspect");
+  if (finePointer()) {
+    if (suspect) suspect.focus({ preventScroll: true });
+    else focusFirstEmpty({ preventScroll: true });
+  } else if (suspect) {
+    suspect.scrollIntoView({ block: "center" });
+  }
   return players.length;
+}
+
+// A short fingerprint of pasted text, so the same clipboard content is offered (or dismissed) only once.
+function textHash(content) {
+  const clean = String(content).replace(/\r\n?/g, "\n").trim();
+  let hash = 5381;
+  for (let i = 0; i < clean.length; i++) {
+    hash = ((hash * 33) ^ clean.charCodeAt(i)) >>> 0;
+  }
+  return `${clean.length}:${hash.toString(36)}`;
+}
+
+// Fingerprints of the last few texts that were filled in or dismissed, so none of them is offered again.
+function seenClips() {
+  try {
+    const list = JSON.parse(store.getItem(CLIP_SEEN_KEY) || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+function markClipSeen(content) {
+  const hash = textHash(content);
+  store.setItem(CLIP_SEEN_KEY, JSON.stringify([hash, ...seenClips().filter((h) => h !== hash)].slice(0, 8)));
+}
+
+let clipText = ""; // clipboard text behind the visible offer
+function hideClipOffer() {
+  document.getElementById("clipOffer").hidden = true;
+  clipText = "";
+}
+
+// When the page opens or comes back into view: if this browser has already been allowed to read the clipboard
+// and it holds stats for 2+ players, offer to fill them in. It never asks for permission, never fills by itself
+// and never moves the cursor. Browsers without the permission check (Safari, Firefox) keep the Paste button.
+async function checkClipboard() {
+  try {
+    if (document.visibilityState !== "visible" || !navigator.permissions || !navigator.clipboard || !navigator.clipboard.readText) return;
+    const permission = await navigator.permissions.query({ name: "clipboard-read" });
+    if (permission.state !== "granted") return;
+    const clip = await navigator.clipboard.readText();
+    const found = !clip.trim() || clip.includes("Who Threw?") || seenClips().includes(textHash(clip))
+      ? []
+      : parseStatsText(clip).players.filter((p) => IMPORT_FIELDS.some((f) => p[f] !== undefined));
+    if (found.length < 2) {
+      hideClipOffer();
+      return;
+    }
+    clipText = clip;
+    const offer = document.getElementById("clipOffer");
+    offer.querySelector("span").textContent = `📋 Stats for ${found.length} players are on your clipboard.`;
+    offer.hidden = false;
+  } catch {
+    // No clipboard permission check here, or the read was refused: nothing is offered.
+  }
 }
 
 function loadScript(src) {
@@ -1240,8 +1525,22 @@ document.getElementById("quickPaste").onclick = () => {
   document.getElementById("importClipboard").click();
 };
 
+document.getElementById("clipFill").onclick = () => {
+  const clip = clipText;
+  if (clip) {
+    document.getElementById("importText").value = clip;
+    document.getElementById("importBox").open = true;
+    applyImport(clip);
+  }
+  hideClipOffer();
+};
+document.getElementById("clipDismiss").onclick = () => {
+  if (clipText) markClipSeen(clipText);
+  hideClipOffer();
+};
+
 document.querySelectorAll("#result button").forEach((b) => {
-  b.onclick = () => setOutcome(b.dataset.result);
+  b.onclick = () => setOutcome(b.dataset.result, true);
 });
 // Typing or pasting "2/11/3" (or "2 11 3") into K, D or A fills all three.
 function splitKda(input) {
@@ -1258,6 +1557,7 @@ function splitKda(input) {
 playersEl.addEventListener("input", (event) => {
   if (["kills", "deaths", "assists"].includes(event.target.dataset.f)) splitKda(event.target);
   if (event.target.dataset.f === "name") exampleLoaded = false; // a typed name makes it the user's own squad
+  if (reviewActive) refreshReview(); // a fixed box loses its mark straight away
   saveDraft();
 });
 playersEl.addEventListener("change", (event) => {
@@ -1324,16 +1624,17 @@ document.getElementById("forgetPlayers").onclick = () => {
 document.getElementById("clear").onclick = () => {
   const before = readRaw();
   const wasExample = exampleLoaded;
+  const outcomeBefore = outcome;
   const hadData = before.some((p) => p.name.trim() || p.hero.trim() || NUMERIC.some(([f]) => String(p[f]).trim()));
   fillPlayers([]);
   exampleLoaded = false;
   document.getElementById("output").innerHTML = "";
-  saveDraft();
+  setOutcome(rememberedOutcome()); // back to the result the user last chose (the example may have changed it)
   if (!hadData) return;
   showToast("Everything cleared", "Undo", () => {
     fillPlayers(before);
     exampleLoaded = wasExample;
-    saveDraft();
+    setOutcome(outcomeBefore);
   });
 };
 document.getElementById("analyze").onclick = () => {
@@ -1370,6 +1671,16 @@ buildPlayerCards();
 loadDraft();
 renderHistory();
 refreshRosterUi();
+
+// With a mouse or trackpad, start with the cursor where typing begins: the first name on an empty form,
+// otherwise the first empty number box. Not on touch screens, where it would open the keyboard on arrival.
+if (finePointer()) {
+  if (readRaw().every((p) => !p.name.trim())) playersEl.querySelector("[data-f=name]").focus({ preventScroll: true });
+  else focusFirstEmpty({ preventScroll: true });
+}
+checkClipboard();
+document.addEventListener("visibilitychange", checkClipboard);
+window.addEventListener("focus", checkClipboard);
 
 // Offline: sw.js keeps the app itself and, after its first use, the screenshot reader on this device.
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

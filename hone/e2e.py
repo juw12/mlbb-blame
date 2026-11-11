@@ -1,4 +1,4 @@
-"""End-to-end check of every v1 button (not a rubric gate; proves the features work).
+"""End-to-end check of every button and flow, v1 to v7 (not a rubric gate; proves the features work).
 
 python hone/e2e.py  -> prints one line per step, exits non-zero on any failure.
 """
@@ -48,13 +48,18 @@ with sync_playwright() as p:
     sensitivity = page.inner_text("#sensitivity") if page.locator("#sensitivity").count() else ""
     step("banner says if the call holds up", "fewer death" in sensitivity and "Darren" in sensitivity, sensitivity)
     # v6: the points are labelled with their owner, the what-if covers 10% swings, and every card shows a stat strip
-    step("decider points say whose they are", "Darren vs" in versus and "pts for Darren" in versus, versus[:140].replace("\n", " | "))
+    # v7 wording: "leaves Darren 0.7 pts behind" replaces "0.7 pts for Darren"
+    step("decider points say whose they are", "Darren vs" in versus and "leaves Darren" in versus and "pts behind" in versus,
+         versus[:140].replace("\n", " | "))
     step("what-if also covers 10% stat swings", "10% more gold" in sensitivity and "turret damage" in sensitivity, sensitivity)
     strip_columns = page.locator("article.card.blame .mini > span").count()
     strip_seen = page.locator("article.card.blame .mini").is_visible()
     strip_label = page.get_attribute("article.card.blame .mini", "aria-label") or ""
-    step("card shows a 7-stat strip without opening anything", strip_columns == 7 and strip_seen and "Deaths" in strip_label,
-         f"columns={strip_columns} visible={strip_seen} | {strip_label[:80]}")
+    # v7: the strip sits inside the breakdown, which starts open on the called player's card only
+    other_strips = page.eval_on_selector_all("article.card:not(.blame) .mini", "els => els.filter(e => e.checkVisibility()).length")
+    step("called player's card shows the 7-stat strip without opening anything; other cards stay short",
+         strip_columns == 7 and strip_seen and "Deaths" in strip_label and other_strips == 0,
+         f"columns={strip_columns} visible={strip_seen} others visible={other_strips} | {strip_label[:80]}")
     share_label = page.inner_text("#shareImage")
     step("share button is ready and labelled", page.locator("#shareImage").is_enabled() and share_label == "Share result image", share_label)
     best_effort = page.inner_text("article.card.mvp .stamp") if page.locator("article.card.mvp .stamp").count() else ""
@@ -62,7 +67,10 @@ with sync_playwright() as p:
     step("method is open on the first analysis", page.evaluate("() => document.getElementById('how').open")
          and "6 + 4" in page.inner_text("#how"))
     step("example squad is not remembered", page.locator("#lastSquad").is_hidden() and page.locator("#forgetPlayers").is_hidden())
-    page.click("article.card.blame details.stats summary")
+    open_states = page.eval_on_selector_all(
+        "#output details.stats", "els => els.map(e => [e.closest('article').classList.contains('blame'), e.open])")
+    step("only the called player's breakdown starts open", len(open_states) == 5 and all(is_blame == is_open for is_blame, is_open in open_states),
+         str(open_states))
     formula = page.inner_text("article.card.blame .formula")
     points = page.locator("article.card.blame .grid-stats .pts").count()
     raw_gold = "7,600 gold" in page.inner_text("article.card.blame")
@@ -290,9 +298,92 @@ with sync_playwright() as p:
     step("quick paste button fills players", names[3] == "Darren" and box_open and page.locator("#quickShot").is_visible(), str(names))
     page.click("#analyze")
     page.wait_for_timeout(300)
-    page.click("article.card.blame details.stats summary")
     evidence = page.inner_text("article.card.blame .grid-stats")
     step("stat breakdown shows actual vs expected", "expected" in evidence and "target 3" in evidence, evidence[:90].replace("\n", " | "))
+
+    # ---- v7 ----
+    # The share is explained where it is shown, and the per-card label is unchanged (5 cards, 5 shares).
+    share_note = page.inner_text("#shareNote")
+    share_labels = page.evaluate("() => (document.getElementById('output').innerText.match(/Share of blame: \\d+%/g) || []).length")
+    step("share note says the shares split one match and total 100%", "adds up to 100%" in share_note and "not a grade" in share_note
+         and share_labels == 5, f"labels={share_labels} | {share_note[:90]}")
+
+    # The method opens with the called player's own numbers worked through, step by step.
+    page.evaluate("() => { document.getElementById('how').open = true; }")
+    worked = page.inner_text("#worked") if page.locator("#worked").count() else ""
+    worked_steps = page.locator("#worked ol > li").count()
+    step("worked example walks the called player's numbers", worked_steps == 5 and "Darren (Jungle)" in worked and "Deaths" in worked
+         and "limited to −1.00" in worked and "−0.60" in worked and "shown as 4.0" in worked and "shown as 43%" in worked,
+         f"steps={worked_steps} | {worked[:120]}".replace("\n", " | "))
+
+    # The what-if now moves the runner-up too.
+    sensitivity = page.inner_text("#sensitivity")
+    step("what-if covers the runner-up as well", "Holds up both ways" in sensitivity and "Kai had 3 more deaths" in sensitivity, sensitivity)
+
+    page.click("#copyText")
+    page.wait_for_timeout(300)
+    clip = page.evaluate("() => navigator.clipboard.readText()")
+    step("copied text says whose favour and that shares total 100%", "pts behind" in clip and "add up to 100% across the 5 players" in clip,
+         " | ".join(clip.splitlines()[:3])[:200])
+
+    image_height = page.evaluate("() => drawResultImage(lastAnalysis).height")
+    step("share image has room for a stat strip per player", image_height == 420 + 20 + 5 * 200 + 120, f"height={image_height}")
+
+    # One button opens every breakdown and closes them again.
+    toggle_before = page.inner_text("#toggleBreakdowns")
+    page.click("#toggleBreakdowns")
+    opened = page.eval_on_selector_all("#output details.stats", "els => els.map(e => e.open)")
+    toggle_open = [page.inner_text("#toggleBreakdowns"), page.get_attribute("#toggleBreakdowns", "aria-expanded")]
+    page.click("#toggleBreakdowns")
+    closed = page.eval_on_selector_all("#output details.stats", "els => els.map(e => e.open)")
+    toggle_closed = [page.inner_text("#toggleBreakdowns"), page.get_attribute("#toggleBreakdowns", "aria-expanded")]
+    step("one button shows or hides every breakdown", toggle_before == "Show every player's breakdown" and all(opened) and len(opened) == 5
+         and toggle_open == ["Hide all breakdowns", "true"] and not any(closed) and toggle_closed == ["Show every player's breakdown", "false"],
+         f"{toggle_before} -> {toggle_open} -> {toggle_closed}")
+
+    # Import review: a dropped digit and a missing number are marked, the cursor goes to the first one, fixing clears the mark.
+    page.click("#clear")
+    doubtful = pasted.replace("2/11/3  7600", "2/11/3  760").replace("5900  18100  79600  600", "5900  18100  79600")
+    page.fill("#importText", doubtful)
+    page.click("#importFill")
+    page.wait_for_timeout(200)
+    marked = page.eval_on_selector_all("input.suspect", "els => els.map(e => [e.closest('.pcard').dataset.index, e.dataset.f, e.title])")
+    notes = page.eval_on_selector_all(".pcard .check-note", "els => els.map(e => e.textContent)")
+    status = page.inner_text("#importStatus")
+    focused = page.evaluate("() => [document.activeElement.closest('.pcard')?.dataset.index, document.activeElement.dataset.f]")
+    step("import marks the boxes that look wrong", [m[:2] for m in marked] == [["3", "gold"], ["4", "turret"]]
+         and "dropped digit" in marked[0][2] and "missing" in marked[1][2] and len(notes) == 2
+         and "2 boxes look off or are missing (marked in orange)" in status and status.startswith("Filled 5 players"),
+         f"{marked} | {status[-70:]}")
+    step("cursor lands on the first box to check", focused == ["3", "gold"], str(focused))
+    page.fill(".pcard:nth-child(4) [data-f=gold]", "7600")
+    after_first_fix = page.eval_on_selector_all("input.suspect", "els => els.map(e => e.dataset.f)")
+    page.fill(".pcard:nth-child(5) [data-f=turret]", "600")
+    after_second_fix = [page.locator("input.suspect").count(), page.locator(".pcard .check-note").count()]
+    page.click("#analyze")
+    page.wait_for_timeout(300)
+    step("fixing a marked box clears its mark, and the match analyzes", after_first_fix == ["turret"] and after_second_fix == [0, 0]
+         and "most to blame: Darren" in page.inner_text(".banner"), f"{after_first_fix} -> {after_second_fix}")
+
+    # Victory / Defeat is remembered: the example does not change it, Clear all and a fresh form go back to it.
+    page.click("#result button[data-result=win]")
+    page.click("#demo")
+    example_result = page.get_attribute("#result button[data-result=lose]", "aria-pressed")
+    page.click("#clear")
+    after_clear = page.get_attribute("#result button[data-result=win]", "aria-pressed")
+    page.evaluate("() => localStorage.removeItem('mlbb-analyzer-draft')")
+    page.evaluate("text => navigator.clipboard.writeText(text)", pasted)
+    page.reload()
+    page.bring_to_front()
+    page.wait_for_timeout(600)
+    after_reload = page.get_attribute("#result button[data-result=win]", "aria-pressed")
+    step("last chosen result is remembered", example_result == "true" and after_clear == "true" and after_reload == "true",
+         f"example lose={example_result} clear win={after_clear} reload win={after_reload}")
+    # The clipboard still holds text that was already imported: it is not offered again.
+    step("text already filled in is not offered again", page.locator("#clipOffer").is_hidden())
+    page.click("#result button[data-result=lose]")
+    # The reload closed the import box; the steps below use the controls inside it, as a user would.
+    page.click("#importBox summary")
 
     # v2: read a screenshot (synthetic dark scoreboard; needs the OCR library from the CDN)
     shot = APP / "hone" / "shots" / "e2e_scoreboard.png"
@@ -365,6 +456,123 @@ with sync_playwright() as p:
     last_share = phone_page.evaluate("() => window.__shares[window.__shares.length - 1]")
     step("phone without file sharing: shares the text", text_label == "Share text only" and not last_share["files"]
          and "most to blame: Darren" in last_share["text"] and not phone_errors, f"{text_label} | {json.dumps(last_share)[:90]}")
+
+    # ---- v7: arriving on the page ----
+    # With a mouse the cursor starts where typing begins; on a touch screen nothing is focused (no keyboard pops up).
+    desk = browser.new_context(viewport={"width": 1280, "height": 800})
+    desk_page = desk.new_page()
+    desk_page.goto(URL)
+    desk_page.wait_for_timeout(300)
+    fine = desk_page.evaluate("() => matchMedia('(pointer: fine)').matches")
+    first_focus = desk_page.evaluate("() => [document.activeElement.dataset.f, document.activeElement.closest('.pcard')?.dataset.index]")
+    desk_page.keyboard.type("Juwen")
+    desk_page.reload()
+    desk_page.wait_for_timeout(300)
+    draft_focus = desk_page.evaluate("() => [document.activeElement.dataset.f, document.activeElement.closest('.pcard')?.dataset.index]")
+    step("desktop: cursor starts in the first name box, or the first empty number when a draft is loaded",
+         fine and first_focus == ["name", "0"] and draft_focus == ["kills", "0"]
+         and desk_page.input_value(".pcard:nth-child(1) [data-f=name]") == "Juwen", f"fine={fine} {first_focus} then {draft_focus}")
+    desk.close()
+
+    touch = browser.new_context(viewport={"width": 390, "height": 800}, is_mobile=True, has_touch=True)
+    touch_page = touch.new_page()
+    touch_page.goto(URL)
+    touch_page.wait_for_timeout(300)
+    coarse = touch_page.evaluate("() => matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches")
+    touch_focus = touch_page.evaluate("() => document.activeElement.tagName")
+    step("touch screen: nothing is focused on arrival", coarse and touch_focus == "BODY", f"coarse={coarse} active={touch_focus}")
+    # After an import on touch, the box to check is scrolled into view but not focused.
+    touch_page.click("#importBox summary")
+    touch_page.fill("#importText", doubtful)
+    touch_page.tap("#importFill")
+    touch_page.wait_for_timeout(400)
+    touch_state = touch_page.evaluate("""() => {
+        const box = document.querySelector("input.suspect");
+        const rect = box ? box.getBoundingClientRect() : null;
+        return {
+          marked: document.querySelectorAll("input.suspect").length,
+          inView: Boolean(rect && rect.top >= 0 && rect.bottom <= innerHeight),
+          focusedSuspect: document.activeElement.classList.contains("suspect"),
+        };
+    }""")
+    step("touch screen: the box to check is brought into view, not focused",
+         touch_state == {"marked": 2, "inView": True, "focusedSuspect": False}, json.dumps(touch_state))
+    touch.close()
+
+    # Clipboard offer: only when reading is already allowed, never filled without a tap, each text offered once.
+    clip_context = browser.new_context(viewport={"width": 390, "height": 800})
+    clip_context.grant_permissions(["clipboard-read", "clipboard-write"])
+    clip_page = clip_context.new_page()
+    clip_errors = []
+    clip_page.on("pageerror", lambda exc: clip_errors.append(str(exc)))
+    clip_page.goto(URL)
+    first_copy = pasted.replace("6/3/5", "7/3/5")
+    clip_page.evaluate("text => navigator.clipboard.writeText(text)", first_copy)
+    clip_page.reload()
+    clip_page.bring_to_front()
+    try:
+        clip_page.wait_for_selector("#clipOffer:not([hidden])", timeout=5000)
+    except Exception:
+        pass
+    offer_text = clip_page.inner_text("#clipOffer span")
+    names_before = clip_page.eval_on_selector_all("[data-f=name]", "els => els.map(e => e.value)")
+    focus_in_offer = clip_page.evaluate("() => Boolean(document.activeElement.closest('#clipOffer'))")
+    step("clipboard stats are offered, not filled in", clip_page.locator("#clipOffer").is_visible() and "Stats for 5 players" in offer_text
+         and all(n == "" for n in names_before) and not focus_in_offer, f"{offer_text} | names={names_before}")
+    clip_page.click("#clipFill")
+    clip_page.wait_for_timeout(300)
+    names_after = clip_page.eval_on_selector_all("[data-f=name]", "els => els.map(e => e.value)")
+    kills_after = clip_page.input_value(".pcard:nth-child(1) [data-f=kills]")
+    hidden_after_fill = clip_page.locator("#clipOffer").is_hidden()
+    clip_page.reload()
+    clip_page.bring_to_front()
+    clip_page.wait_for_timeout(700)
+    step("one tap fills them in, and the same text is not offered twice", names_after[3] == "Darren" and kills_after == "7"
+         and hidden_after_fill and clip_page.locator("#clipOffer").is_hidden(), f"{names_after} kills={kills_after}")
+    clip_page.evaluate("text => navigator.clipboard.writeText(text)", pasted.replace("6/3/5", "8/3/5"))
+    clip_page.reload()
+    clip_page.bring_to_front()
+    try:
+        clip_page.wait_for_selector("#clipOffer:not([hidden])", timeout=5000)
+    except Exception:
+        pass
+    offered_again = clip_page.locator("#clipOffer").is_visible()
+    clip_page.click("#clipDismiss")
+    kills_kept = clip_page.input_value(".pcard:nth-child(1) [data-f=kills]")
+    clip_page.reload()
+    clip_page.bring_to_front()
+    clip_page.wait_for_timeout(700)
+    step("a new copy is offered; Dismiss leaves the form alone and stays dismissed", offered_again and kills_kept == "7"
+         and clip_page.locator("#clipOffer").is_hidden() and not clip_errors, f"offered={offered_again} kills={kills_kept} {clip_errors[:2]}")
+    clip_page.evaluate("text => navigator.clipboard.writeText(text)", "gg wp see you tomorrow")
+    clip_page.reload()
+    clip_page.bring_to_front()
+    clip_page.wait_for_timeout(700)
+    step("ordinary clipboard text is ignored", clip_page.locator("#clipOffer").is_hidden())
+    clip_context.close()
+
+    # Without the permission the clipboard is never read and nothing is asked.
+    quiet = browser.new_context(viewport={"width": 390, "height": 800})
+    quiet.add_init_script("""
+        window.__clipReads = 0;
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const original = navigator.clipboard.readText.bind(navigator.clipboard);
+          navigator.clipboard.readText = (...args) => {
+            window.__clipReads += 1;
+            return original(...args);
+          };
+        }
+    """)
+    quiet_page = quiet.new_page()
+    quiet_page.goto(URL)
+    quiet_page.bring_to_front()
+    quiet_page.evaluate("() => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); }")
+    quiet_page.wait_for_timeout(600)
+    permission = quiet_page.evaluate("() => navigator.permissions.query({ name: 'clipboard-read' }).then((p) => p.state, () => 'unsupported')")
+    reads = quiet_page.evaluate("() => window.__clipReads")
+    step("no permission: the clipboard is never read on arrival", permission != "granted" and reads == 0
+         and quiet_page.locator("#clipOffer").is_hidden(), f"permission={permission} reads={reads}")
+    quiet.close()
 
 print("E2E", "OK" if not failures else f"FAILED: {failures}", flush=True)
 os._exit(1 if failures else 0)

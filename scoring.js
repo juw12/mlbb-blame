@@ -89,6 +89,8 @@ function scorePlayers(players) {
       stat,
       label: LABELS[stat],
       weight: weights[stat],
+      actual: stats[stat].actual,
+      expected: stats[stat].expected,
       value: stats[stat].value,
       impact: weights[stat] * stats[stat].value,
       points: 4 * weights[stat] * stats[stat].value,
@@ -215,36 +217,50 @@ function deciders(top, next, won) {
     .slice(0, 2);
 }
 
-// Would the call survive a slightly different game? Two checks on the called player, both in the
-// direction that helps them in a loss and hurts them in a win:
+// Would the call survive a slightly different game? The same two checks are run on both players
+// the call hangs on, one player and one stat at a time:
 // 1. deaths changed by 1, 2 and 3: the first change that flips the call is reported;
-// 2. gold, hero damage, damage taken and turret damage each moved by 10%, one at a time.
+// 2. gold, hero damage, damage taken and turret damage each moved by 10%.
+// The called player is moved towards the runner-up (better in a loss, worse in a win) and the
+// runner-up is moved towards the called player (worse in a loss, better in a win).
 const SENSITIVITY_STEPS = 3;
 const SENSITIVITY_SWING = 0.1;
 const SWING_STATS = ["gold", "damage", "taken", "turret"];
 function callSensitivity(players, won) {
-  const original = topIndex(scorePlayers(players).results, won);
-  const callAfter = (change) => {
-    const changed = players.map((p, i) => (i === original ? { ...p, ...change } : p));
-    return topIndex(scorePlayers(changed).results, won);
-  };
-  const swings = SWING_STATS.map((stat) => {
-    const now = callAfter({ [stat]: players[original][stat] * (won ? 1 - SENSITIVITY_SWING : 1 + SENSITIVITY_SWING) });
-    return { stat, label: LABELS[stat].toLowerCase(), flips: now !== original, to: now !== original ? players[now].name : null };
-  });
-  const deathCheck = { flips: false, steps: 0, to: null };
-  for (let n = 1; n <= SENSITIVITY_STEPS; n++) {
-    const deaths = players[original].deaths + (won ? n : -n);
-    if (deaths < 0) break;
-    deathCheck.steps = n;
-    const now = callAfter({ deaths });
-    if (now !== original) {
-      deathCheck.flips = true;
-      deathCheck.to = players[now].name;
-      break;
+  const ranked = scorePlayers(players).results.map((r, i) => [r.rawScore, i]).sort((a, b) => b[0] - a[0]);
+  const original = won ? ranked[0][1] : ranked[ranked.length - 1][1];
+  const runner = won ? ranked[1][1] : ranked[ranked.length - 2][1];
+
+  // Change one player's stats and see who the call lands on. `better` = the change improves their score.
+  const check = (who, better) => {
+    const callAfter = (change) => {
+      const changed = players.map((p, i) => (i === who ? { ...p, ...change } : p));
+      return topIndex(scorePlayers(changed).results, won);
+    };
+    const factor = better ? 1 + SENSITIVITY_SWING : 1 - SENSITIVITY_SWING;
+    const swings = SWING_STATS.map((stat) => {
+      const now = callAfter({ [stat]: players[who][stat] * factor });
+      return { stat, label: LABELS[stat].toLowerCase(), flips: now !== original, to: now !== original ? players[now].name : null };
+    });
+    const deathCheck = { flips: false, steps: 0, to: null };
+    for (let n = 1; n <= SENSITIVITY_STEPS; n++) {
+      const deaths = players[who].deaths + (better ? -n : n);
+      if (deaths < 0) break;
+      deathCheck.steps = n;
+      const now = callAfter({ deaths });
+      if (now !== original) {
+        deathCheck.flips = true;
+        deathCheck.to = players[now].name;
+        break;
+      }
     }
-  }
-  return { ...deathCheck, swing: SENSITIVITY_SWING, swings };
+    return { ...deathCheck, swings };
+  };
+
+  const called = check(original, !won);
+  const runnerUp = { name: players[runner].name, ...check(runner, won) };
+  const anyFlip = (c) => c.flips || c.swings.some((s) => s.flips);
+  return { ...called, swing: SENSITIVITY_SWING, runnerUp, holds: !anyFlip(called) && !anyFlip(runnerUp) };
 }
 
 // Squad leaderboard from saved matches: lifetime numbers plus the last RECENT_GAMES as a trend.

@@ -4,11 +4,46 @@
 - [x] Freeze rubric mlbb-v1 + code checker (hone/check.py)
 - [x] Baseline v0: gates 3/5 (G3 overflow 336px at 320, G5 shares summed to 101) - self-judged 5.6
 - [x] Loop rounds: r1 kept (v1), stop: judge blocked -> self-judged, stopped at 1 round to avoid self-score inflation
-- [ ] Sync: GitHub repo juw12/mlbb-blame + Pages
-- [ ] Sync: profile README section
-- [ ] Sync: portfolio card
-- [ ] Sync: landing page /p/mlbb-blame/
-- [ ] Sync: Obsidian project note + Update Log
+- [x] Sync: GitHub repo juw12/mlbb-blame + Pages
+- [x] Sync: profile README section
+- [x] Sync: portfolio card
+- [x] Sync: landing page /p/mlbb-blame/
+- [x] Sync: Obsidian project note + Update Log
+- [x] Final report
+
+## Run queue (rounds 6-7, started 2026-11-11 23:20, "close every council suggestion left on v6")
+Round 6 (v7) - the nine suggestions left on v6:
+- [x] 1. Pega-Vision: collapse stat strips and breakdowns by default (open only on the called player, one toggle for the rest)
+- [x] 2. Pega-Vision: label the share as a relative share of this match (share note + image header)
+- [x] 3. Pega-Vision: check the clipboard on load (offer bar, only when reading is already allowed)
+- [x] 4. Pega-Vision: inline validation of parsed rows (review marks on suspect numbers)
+- [x] 5. Pega-Thinking: bars inside "How X adds up" and on the share image
+- [x] 6. Pega-Thinking: worked example in "How is this calculated?"
+- [x] 7. GLM-5.3-Flash: runner-up sensitivity ("Holds up both ways")
+- [x] 8. GLM-5.3-Flash: say whose favour the decider points are in ("leaves Darren 0.7 pts behind")
+- [x] 9. GLM-5.3-Flash: autofocus the first empty box (desktop) and remember the last Victory/Defeat
+- [x] Tests on v7: node test.js, e2e 76/76, offline 7/7, gates 5/5
+- [x] Council on v7: score 9.3, pairwise v7 > v6 3-0
+Round 7 (v8) - the nine suggestions the council made on v7 (joined the queue in this run):
+- [ ] 10. Pega-Vision + GLM-5.3-Flash: smallest text up to 12px
+- [ ] 11. GLM-5.3-Flash: sensitivity also tests kills and assists (kill participation)
+- [ ] 12. Pega-Thinking: the "Holds up / Could flip" line gets its own visual treatment
+- [ ] 13. Pega-Thinking: "estimates, not official data" caveat next to the verdict and in "How is this calculated?"
+- [ ] 14. Pega-Thinking: "How is this calculated?" as a short plain summary with the detail behind expanders
+- [ ] 15. Pega-Vision: worked example collapsed by default
+- [ ] 16. GLM-5.3-Flash: fetch the screenshot reader in the background so the first read does not wait
+- [ ] 17. Pega-Vision: faster phone entry (auto-advance, touch targets, turret damage optional)
+- [ ] 18. Pega-Vision: compact chat-ready share image
+- [ ] Tests on v8
+- [ ] Council on v8 (keep only if it wins the pairwise against v7)
+Sync and close:
+- [ ] Repo pushed, live site serves the kept version
+- [ ] Landing page /p/mlbb-blame/
+- [ ] Profile README section
+- [ ] Portfolio card
+- [ ] Obsidian project note + Update Log
+- [ ] Lessons appended
+- [ ] Cairn session ended
 - [ ] Final report
 
 ## Goal beyond the goal
@@ -19,6 +54,11 @@ blamed player accepts the numbers.
 - Assumed: council blocked after 3 approaches (wrapped run, detached run with images, direct run without images and --timeout 90: all hung with empty output although `ping` returned 3 judges ok) -> self-judged, labelled as such.
 - Assumed: project = mlbb-analyzer (the only project in this chat); repo name juw12/mlbb-blame.
 - Assumed: role baselines/weights stay labelled as estimates (no official Moonton data) - no invented facts.
+- Assumed (round 6): the import review thresholds are sanity heuristics for dropped or added digits (gold 5x, hero damage and damage taken 10x away from the others' median, K/D/A over 40), not game rules.
+- Assumed (round 6): the load autofocus is desktop-only (pointer: fine) so phones do not pop the keyboard; after an import on touch the suspect box is scrolled into view, not focused.
+- Assumed (round 6): the clipboard offer appears only when clipboard reading is already granted (Chromium) and never prompts; the last 8 used or dismissed texts are remembered so they are not offered again.
+- Assumed (round 6): breakdowns start closed except on the called player; Clear all restores the remembered result; the example's result is not remembered; review marks do not survive a reload.
+- Assumed (round 6): v7 kept on a 3-0 pairwise with a 0.0 score gain, the same way rounds 4 and 5 were kept; recorded as a plateau round.
 
 ## Rounds
 | round | change | gates | judge score | pairwise win | kept? | note |
@@ -136,3 +176,43 @@ Council suggestions left on v6 (not done; two of them pull in opposite direction
 - GLM-5.3-Flash: also vary the runner-up's stats in the sensitivity check (or soften "Holds up"); say whose favour
   the decider points are in; autofocus the first empty stat box and remember the last Victory/Defeat choice.
 
+## Round 6 (2026-11-12) - v7
+
+Targets: all nine council suggestions left on v6 (run queue items 1-9).
+
+Changes (v7):
+- Import review: after a screenshot or paste, numbers that look like a dropped or added digit get a `.suspect`
+  outline and a "check this" note; the first one is focused (desktop) or scrolled into view (touch).
+- Clipboard offer: on open, focus or return to the tab, if clipboard reading is already allowed and the clipboard
+  holds stats for 2+ players, a bar offers "Fill them in" / "Not now". It never prompts and never fills by itself.
+- Result: breakdown strip moved inside "How X adds up"; open only on the called player, with
+  "Show every player's breakdown" for the rest. Share note says the shares split this one match and total 100%.
+- Sensitivity also moves the runner-up towards the called player ("Holds up both ways ...").
+- Deciders say whose favour the points are in ("leaves Darren 0.7 pts behind").
+- "How is this calculated?" opens with a five-step worked example built from the match on screen.
+- Share image: one stat strip per player, header "BAR = SHARE OF BLAME (TOTAL 100%)".
+- Entry: last Victory/Defeat is remembered; first empty box is focused on desktop only.
+- `scoring.js`: breakdown entries carry `actual` and `expected`; `callSensitivity` covers the runner-up.
+  `importer.js`: `reviewRows` exported, `IMPORT_FIELDS` global. `sw.js` cache `whothrew-shell-v7`.
+
+Checks: `node test.js` pass; `hone/e2e.py` 76/76 PASS (20 new steps); `hone/offline.py` 7/7;
+`hone/check.py v7` gates 5/5 (shares 43/18/15/14/10).
+
+e2e steps changed on purpose (the behaviour they checked moved): the decider step asserts "leaves Darren" and
+"pts behind" instead of "pts for Darren"; the strip step is now "called player's card shows the 7-stat strip without
+opening anything; other cards stay short"; the click on the blame card's summary became "only the called player's
+breakdown starts open"; the second summary click before "stat breakdown shows actual vs expected" was removed;
+the import box is reopened after the reload in the v7 block; strip visibility uses `checkVisibility()`.
+No step was deleted without a replacement.
+
+Council (Pega-Vision, Pega-Thinking, GLM-5.3-Flash): v7 single score 9.3 (v6 was 9.3; judge totals 8.85 / 9.3 / 9.3;
+criterion medians C1 9, C2 9, C3 10, C4 9, C5 10); pairwise v7 > v6 3-0, both orders agree. Kept v7 on the pairwise.
+Absolute gain 0.0 < MIN_GAIN -> plateau round 1 of this run.
+
+Council suggestions on v7 (all nine joined the run queue as items 10-18 for round 7):
+- Pega-Vision: collapse the worked example and breakdowns on phones and raise the smallest text to 12px; faster
+  phone entry (auto-advance, larger touch targets, turret damage optional); a compact chat-ready share image.
+- Pega-Thinking: "How is this calculated?" as progressive disclosure in plainer words; a more prominent
+  sensitivity line; the estimates caveat nearer the verdict.
+- GLM-5.3-Flash: test kill participation in the sensitivity check; fetch the OCR assets ahead of first use;
+  raise the smallest type sizes.

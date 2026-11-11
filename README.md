@@ -17,6 +17,13 @@ the **MVP** after a victory, with the reasons in numbers.
   reads work without internet; the image never leaves your phone). Collapsed OCR
   spacing such as "Darren Fanny" is split using a list of MLBB hero names, OCR look-alikes (`7O00`) are corrected, and
   "Victory"/"Defeat" sets the result. Filled cards are highlighted so you check them before analyzing.
+- **Marks the numbers to check**: after an import, a box is outlined in orange with a note when its number is missing,
+  is 0, or is far off the other players (gold 5 times, hero damage or damage taken 10 times above or below the
+  others' median, e.g. "gold 760 looks too low next to the others (a dropped digit?)"). The cursor lands on the first
+  marked box (on a phone it is scrolled into view), and fixing a box clears its mark.
+- **Offers stats already on your clipboard**: when you open the app with copied stats for two or more players, a bar
+  offers to fill them in with one tap. This only happens in browsers where reading the clipboard is already allowed
+  (it never asks for permission); a text you used or dismissed is not offered again.
 - **Role-aware scoring**: each stat is the player's share of the team total, compared with what that role usually gets.
   A Roam is not punished for low gold, and a Gold Laner is not punished for low damage taken. The KDA target is per role
   too (2.5 for Roam and EXP Lane, 3 for the others), and every stat shows its actual-vs-expected numbers on screen.
@@ -27,24 +34,30 @@ the **MVP** after a victory, with the reasons in numbers.
   the top player is tagged "Nearly as much to blame" / "Almost MVP". A **How is this decided?** link under the verdict
   opens the full explanation (it is already open the first time you analyze a match).
 - **Why this player and not the next one**: the verdict lists the two stats that separate the top two players, with the
-  points each one cost ("Darren vs Kai: 11 vs 6 deaths −0.7 pts for Darren"), and re-scores the match for the called
-  player with up to 3 deaths fewer (loss) or more (win), and with 10% more (loss) or less (win) gold, hero damage,
-  damage taken and turret damage, one change at a time: "Holds up" if the call survives all of them, "Could flip"
-  with the change that flips it if not.
-- **The maths on every card**: a strip of seven small bars shows the points each stat added (green) or cost (red), and
-  "How 4.0 adds up" shows 6.0 for an average game plus or minus those points, next to the raw numbers ("11 deaths =
-  38% of team deaths, about 5 expected").
+  points each one cost ("Darren vs Kai: 11 vs 6 deaths leaves Darren 0.7 pts behind"), and re-scores the match for the
+  called player with up to 3 deaths fewer (loss) or more (win), and with 10% more (loss) or less (win) gold, hero
+  damage, damage taken and turret damage, one change at a time. The runner-up gets the same test in the opposite
+  direction: "Holds up both ways" if the call survives all of them, "Could flip" with the change that flips it if not.
+- **The maths on every card**: "How 4.0 adds up" holds a strip of seven small bars with the points each stat added
+  (green) or cost (red), then 6.0 for an average game plus or minus those points, next to the raw numbers ("11 deaths
+  = 38% of team deaths, about 5 expected"). It starts open on the called player only, so the other cards stay short;
+  one button shows or hides every breakdown.
+- **Worked example from your own match**: "How is this decided?" walks the called player's numbers through the formula
+  in five steps, from the stat that moved the score most to the final share.
 - **Data warnings**: the result and the confidence chip say so when fewer than 5 players were entered or a stat was left
   blank (counted as 0), e.g. "Clear call, but only 4 of 5 players entered". The same note travels with the copied
   text ("Data note: …") and the share image.
 - **Share to the squad chat**: on a phone one tap on **Share result image** opens the share sheet with the PNG and the
   text summary (the image is prepared as soon as the result appears); elsewhere it opens a preview with Download. The
-  image labels its columns and the bar ("bar = share of blame"), has a lane-colour stripe per player and a THREW /
-  CARRIED stamp on the top row, and the copy-ready text names the runner-up. If the image can't be made or shared,
-  the button shares the text instead. "Threw" / "Carried" / "Best effort" stamps and lane colours on the cards.
+  image labels its columns and the bar ("bar = share of blame (total 100%)"), shows the seven per-stat bars under each
+  player, has a lane-colour stripe per player and a THREW / CARRIED stamp on the top row, and the copy-ready text names
+  the runner-up and says the shares add up to 100% across the players. A note under the buttons explains that a share
+  splits this one match and is not a grade. If the image can't be made or shared, the button shares the text instead.
+  "Threw" / "Carried" / "Best effort" stamps and lane colours on the cards.
 - **Mobile-first entry**: one card per player, numeric keypad, type or paste `2/11/3` in K to fill K, D and A at once,
   Enter / Next on the keypad jumps to the next box, the draft is saved as you type, "Next match" keeps the squad, and
-  "Clear all" can be undone.
+  "Clear all" can be undone. Your last Victory / Defeat choice is remembered, and on a computer the cursor starts in
+  the first empty box (not on a touch screen, so the keyboard doesn't pop up).
 - **Remembers your squad**: a name you have analyzed before fills in its hero and role, and **Last squad** refills all
   five and puts the cursor on the first number. The built-in example is never remembered; "Forget saved players"
   (with Undo) clears it all.
@@ -61,8 +74,11 @@ The role baselines and weights in `scoring.js` are this app's own estimates, not
 can't see rotations, vision, objective calls, the draft or early-game mistakes. Treat the verdict as evidence, not a ruling.
 Screenshot reading was tested on a synthetic dark scoreboard, not on every phone's real MLBB screenshot; always check the
 filled numbers. Offline use was tested in desktop Chromium with the network cut; the phone share sheet and "Add to Home
-Screen" were not tested on a real phone. "Holds up / Could flip" only varies the called player's own numbers (deaths
-by up to 3; gold, hero damage, damage taken and turret damage by 10%), one at a time, not the other players'.
+Screen" were not tested on a real phone. "Holds up / Could flip" varies the called player's numbers and the
+runner-up's (deaths by up to 3; gold, hero damage, damage taken and turret damage by 10%), one change at a time, not
+several together and not the other three players'. The orange "check this number" marks are sanity checks for dropped
+or added digits, not game rules. The clipboard offer needs a browser that lets a page ask whether clipboard reading
+is already allowed (Chromium-based); elsewhere use the **Paste copied stats** button.
 
 ## Run it
 
@@ -72,9 +88,9 @@ link or `python -m http.server` for those.
 ## Tests
 
 ```
-node test.js            # scoring + import parser: verdicts, shares sum to 100, point breakdown, sensitivity, edge cases
-python hone/check.py v6 # gates: no console errors, no overflow at 320-1440 px, encoding (needs Playwright)
-python hone/e2e.py      # every button: import, share (desktop + phone share sheet), roster, history, warnings, draft
+node test.js            # scoring + import parser: verdicts, shares sum to 100, point breakdown, sensitivity, review marks
+python hone/check.py v7 # gates: no console errors, no overflow at 320-1440 px, encoding (needs Playwright)
+python hone/e2e.py      # every button: import + review marks, clipboard offer, share (desktop + phone), roster, history, draft
 python hone/offline.py  # reads a screenshot online once, cuts the network, then opens, analyzes and reads again
 ```
 
