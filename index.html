@@ -6,6 +6,9 @@
 <meta name="theme-color" content="#0a0f1f">
 <meta name="description" content="Settle who threw (or carried) your Mobile Legends match: role-aware scores, blame and credit shares, and a shareable result card.">
 <title>Who Threw? · MLBB Blame &amp; MVP Analyzer</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root {
     --bg: #0a0f1f; --panel: #121a30; --panel-2: #0e1528; --line: #26314f; --text: #eef1f8; --muted: #9aa4c2;
@@ -52,10 +55,10 @@
   .pcard .id { display: grid; grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 6px; align-items: center; }
   .pcard .num-badge { color: var(--muted); font-weight: 800; text-align: center; }
   .pcard .stats-in { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
-  label.f { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  label.f { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
   input, select { width: 100%; min-width: 0; background: #0a1124; color: var(--text); border: 1px solid var(--line);
                   border-radius: 7px; padding: 9px 8px; font: inherit; font-size: 16px; }
-  input::placeholder { color: #5d6788; }
+  input::placeholder { color: #8590b3; }
   @media (max-width: 720px) {
     .pcard .id { grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr); }
     .pcard .id .hero { grid-column: 2; }
@@ -108,7 +111,7 @@
   ul.reasons li.plus { color: #b9f2d6; }
   details.stats { margin-top: 10px; }
   details.stats summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
-  .grid-stats { display: grid; grid-template-columns: minmax(0, 120px) minmax(0, 1fr); gap: 4px 8px; font-size: 12px; margin-top: 8px; }
+  .grid-stats { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr); gap: 4px 8px; font-size: 12px; margin-top: 8px; }
   .grid-stats .why { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; margin: -2px 0 4px; }
   .diverge { position: relative; height: 8px; background: #0a1124; border-radius: 4px; align-self: center; }
   .diverge::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #3a4670; }
@@ -116,6 +119,15 @@
   details.how { margin-top: 14px; scroll-margin-top: 16px; }
   .tag.near { background: rgba(255,170,100,.14); color: #ffd2a8; margin-left: 4px; }
   .runner { margin-top: 8px; font-size: 13.5px; color: #ffd2a8; }
+  .versus { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12); font-size: 13.5px; color: #d5dbee; }
+  .versus div + div { margin-top: 4px; }
+  .versus b { color: var(--text); }
+  .formula { margin-top: 10px; padding: 6px 9px; border-radius: 7px; background: #0a1124; font-size: 12.5px; color: var(--muted);
+             font-variant-numeric: tabular-nums; }
+  .formula b { color: var(--text); }
+  .pts { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .pts.up { color: var(--win); }
+  .pts.down { color: var(--lose); }
   .link { background: none; border: 0; padding: 0; margin-left: 8px; color: var(--blue); font: inherit; font-size: 12.5px;
           font-weight: 700; text-decoration: underline; cursor: pointer; min-height: 0; padding: 8px 2px; }
   dialog.preview { max-width: min(92vw, 440px); width: 100%; background: var(--panel); color: var(--text);
@@ -135,6 +147,12 @@
   .matches li { display: flex; gap: 8px; align-items: center; justify-content: space-between; background: var(--panel-2);
                 border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; font-size: 13.5px; }
   .matches li span { min-width: 0; overflow-wrap: anywhere; }
+  .matches li small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .form { display: inline-flex; align-items: flex-end; gap: 2px; height: 18px; vertical-align: middle; margin-right: 6px; }
+  .form i { display: block; width: 5px; min-height: 2px; border-radius: 1px; }
+  .trend { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .trend.up { color: var(--win); }
+  .trend.down { color: var(--lose); }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
   .toast { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 20; background: #1f2a4a; color: var(--text);
            border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; gap: 12px; align-items: center;
@@ -187,12 +205,13 @@
       </div>
       <button id="demo" type="button" class="ghost">Load example</button>
       <button id="newMatch" type="button" class="ghost" title="Keep names, heroes and roles; clear the numbers">Next match</button>
+      <button id="lastSquad" type="button" class="ghost" title="Fill the names, heroes and roles of the last squad you analyzed" hidden>Last squad</button>
       <button id="clear" type="button" class="ghost">Clear all</button>
     </div>
     <details class="import" id="importBox">
       <summary>📷 Fill from a screenshot or pasted text</summary>
       <p class="hint" style="margin-top:6px">Fastest: open your end-of-match screenshot, long-press to <b>copy the text</b> (iPhone Live Text or Google Lens) and paste it here.
-        Or let the app read the screenshot itself. One player per line works best:
+        Or let the app read the screenshot itself (after the first read it also works offline). One player per line works best:
         <b>name, hero, K/D/A, gold, hero dmg, dmg taken, turret dmg</b>. You check every number before analyzing.</p>
       <textarea id="importText" spellcheck="false" aria-label="Pasted match stats"
         placeholder="Darren  Fanny  Jungle  2/11/3  7600  38.7k  47,800  800&#10;Kai  Tigreal  Roam  0/6/13  5900  18.1k  79,600  600"></textarea>
@@ -202,9 +221,12 @@
         <label class="btn small" style="display:inline-flex;align-items:center">Read screenshot<input id="importImage" type="file" accept="image/*" hidden></label>
       </div>
       <div class="import-status" id="importStatus" role="status" aria-live="polite"></div>
+      <div class="hint" id="ocrOffline"></div>
     </details>
     <div class="players" id="players"></div>
-    <div class="hint">Skip a player by leaving the name empty. Damage accepts 84512, 84,512 or 84.5k. Your entry is saved on this device as you type.</div>
+    <datalist id="knownNames"></datalist>
+    <div class="hint">Skip a player by leaving the name empty. Damage accepts 84512, 84,512 or 84.5k. <b>Enter / Next</b> on the keypad jumps to the next box.
+      Your entry is saved on this device as you type, and a name you have analyzed before fills in its hero and role.</div>
     <div class="error" id="error" role="alert"></div>
     <div class="actionbar">
       <button class="primary" id="analyze" type="button">Analyze match</button>
@@ -221,6 +243,7 @@
       <button id="exportHistory" type="button" class="small">Export backup</button>
       <label class="btn small" style="display:inline-flex;align-items:center">Import backup<input id="importHistory" type="file" accept="application/json" hidden></label>
       <button id="clearHistory" type="button" class="small ghost">Clear history</button>
+      <button id="forgetPlayers" type="button" class="small ghost" title="Forget the remembered names, heroes and roles" hidden>Forget saved players</button>
     </div>
   </section>
 
@@ -235,7 +258,7 @@
   <div id="sharePreviewTitle" style="font-weight:800;margin-bottom:8px">Your result image</div>
   <img id="sharePreviewImg" alt="Preview of the result image">
   <div class="row">
-    <button class="primary" id="sharePreviewShare" type="button">Share</button>
+    <button class="primary" id="sharePreviewShare" type="button">Share image</button>
     <button id="sharePreviewDownload" type="button">Download</button>
     <button id="sharePreviewClose" type="button">Close</button>
   </div>
@@ -250,9 +273,15 @@ const NUMERIC = [
 ];
 const DRAFT_KEY = "mlbb-analyzer-draft";
 const HISTORY_KEY = "mlbb-analyzer-history";
+const ROSTER_KEY = "mlbb-analyzer-roster";     // { "darren": { name, hero, role } } for every analyzed player
+const SQUAD_KEY = "mlbb-analyzer-squad";       // names, heroes and roles of the last analyzed squad
+const SEEN_HOW_KEY = "mlbb-analyzer-seen-how"; // the method is shown open on the first analysis only
+const OCR_READY_KEY = "mlbb-analyzer-ocr-ready";
 const playersEl = document.getElementById("players");
 let outcome = "lose";
 let lastAnalysis = null;
+let exampleLoaded = false; // the built-in example must not be remembered as the user's squad
+let shareAsset = null;     // { file, url }: result image rendered right after analysis, so Share is one tap
 
 // localStorage can be unavailable (private mode, sandboxed iframes): fall back to memory.
 const store = (() => {
@@ -277,15 +306,16 @@ function buildPlayerCards() {
     <div class="pcard" data-index="${i}" data-role="${role}">
       <div class="id">
         <span class="num-badge">${i + 1}</span>
-        <input class="name" data-f="name" placeholder="Player name" aria-label="Player ${i + 1} name" autocomplete="off">
-        <input class="hero" data-f="hero" placeholder="Hero" aria-label="Player ${i + 1} hero" autocomplete="off">
+        <input class="name" data-f="name" placeholder="Player name" aria-label="Player ${i + 1} name" autocomplete="off" list="knownNames" enterkeyhint="next">
+        <input class="hero" data-f="hero" placeholder="Hero" aria-label="Player ${i + 1} hero" autocomplete="off" enterkeyhint="next">
         <select class="role" data-f="role" aria-label="Player ${i + 1} role">
           ${ROLES.map((r) => `<option ${r === role ? "selected" : ""}>${r}</option>`).join("")}
         </select>
       </div>
       <div class="stats-in">
         ${NUMERIC.map(([f, label]) => `
-          <label class="f">${label}<input data-f="${f}" inputmode="${["kills", "deaths", "assists"].includes(f) ? "numeric" : "decimal"}" placeholder="0" autocomplete="off"></label>`).join("")}
+          <label class="f">${label}<input data-f="${f}" inputmode="${["kills", "deaths", "assists"].includes(f) ? "numeric" : "decimal"}" placeholder="0" autocomplete="off"
+            enterkeyhint="${i === ROLES.length - 1 && f === "turret" ? "done" : "next"}"></label>`).join("")}
       </div>
     </div>`).join("");
 }
@@ -349,7 +379,7 @@ function setOutcome(value) {
 }
 
 function saveDraft() {
-  store.setItem(DRAFT_KEY, JSON.stringify({ outcome, players: readRaw() }));
+  store.setItem(DRAFT_KEY, JSON.stringify({ outcome, players: readRaw(), example: exampleLoaded }));
   document.getElementById("draftNote").textContent = "Draft saved";
 }
 
@@ -358,6 +388,7 @@ function loadDraft() {
     const draft = JSON.parse(store.getItem(DRAFT_KEY));
     if (draft && Array.isArray(draft.players)) {
       fillPlayers(draft.players);
+      exampleLoaded = Boolean(draft.example);
       setOutcome(draft.outcome === "win" ? "win" : "lose");
       document.getElementById("draftNote").textContent = "Draft restored";
     }
@@ -365,6 +396,64 @@ function loadDraft() {
     store.removeItem(DRAFT_KEY);
   }
 }
+
+function loadJson(key, fallback) {
+  try {
+    return JSON.parse(store.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+// Remember who played what, so a returning name fills in its hero and role.
+function rememberSquad(players) {
+  const roster = loadJson(ROSTER_KEY, {});
+  for (const p of players) {
+    roster[p.name.toLowerCase()] = { name: p.name, hero: p.hero, role: p.role };
+  }
+  store.setItem(ROSTER_KEY, JSON.stringify(roster));
+  store.setItem(SQUAD_KEY, JSON.stringify(readRaw().map(({ name, hero, role }) => ({ name, hero, role }))));
+  refreshRosterUi();
+}
+
+function refreshRosterUi() {
+  const roster = Object.values(loadJson(ROSTER_KEY, {}));
+  document.getElementById("knownNames").innerHTML = roster.map((p) => `<option value="${escapeHtml(p.name)}"></option>`).join("");
+  document.getElementById("lastSquad").hidden = !loadJson(SQUAD_KEY, []).some((p) => p.name && p.name.trim());
+  document.getElementById("forgetPlayers").hidden = roster.length === 0;
+}
+
+// Fill hero and role for a known name, unless the hero box already has something in it.
+function recallPlayer(card) {
+  const field = (f) => card.querySelector(`[data-f=${f}]`);
+  const known = loadJson(ROSTER_KEY, {})[field("name").value.trim().toLowerCase()];
+  if (!known || field("hero").value.trim()) return false;
+  field("hero").value = known.hero;
+  field("role").value = known.role;
+  syncRoleColours();
+  saveDraft();
+  showToast(`${known.name}: ${known.hero ? `${known.hero} · ` : ""}${known.role} filled in from last time`);
+  return true;
+}
+
+// Put the cursor in the first empty number box of the first named player.
+function focusFirstEmpty() {
+  for (const card of playersEl.children) {
+    if (!card.querySelector("[data-f=name]").value.trim()) continue;
+    const empty = NUMERIC.map(([f]) => card.querySelector(`[data-f=${f}]`)).find((el) => el.value.trim() === "");
+    if (empty) {
+      empty.focus();
+      return;
+    }
+  }
+}
+
+// "+0.3" / "−1.1": score points to one decimal, with a real minus sign.
+function signed(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded < 0 ? "−" : "+"}${Math.abs(rounded).toFixed(1)}`;
+}
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 function tagClass(verdict) {
   if (["MVP", "MVP (lose)", "Carried", "Not your fault"].includes(verdict)) return "good";
@@ -413,6 +502,28 @@ function headline(analysis) {
   return { won, top };
 }
 
+// "Why Darren and not Kai?": the stats that separate the top two, and whether a slightly different game flips the call.
+function versusHtml(analysis, top) {
+  const { call, result } = analysis;
+  if (!call.runnerUp) return "";
+  const won = result === "win";
+  const title = won ? "MVP" : "most to blame";
+  const lines = [];
+  if (call.deciders && call.deciders.length) {
+    const reasons = call.deciders.map((d) =>
+      `${escapeHtml(d.text)} <span class="pts ${won ? "up" : "down"}">${signed(won ? d.points : -d.points)} pts</span>`);
+    lines.push(`<div><b>Why ${escapeHtml(top.name)} and not ${escapeHtml(call.runnerUp)} (${call.runnerUpScore.toFixed(1)})?</b> ${reasons.join(" · ")}</div>`);
+  }
+  const s = call.sensitivity;
+  if (s && s.steps > 0) {
+    const change = `${plural(s.steps, won ? "more death" : "fewer death")}`;
+    lines.push(s.flips
+      ? `<div id="sensitivity">⚖ Could flip: with ${change}, ${escapeHtml(s.to)} would be ${title} instead of ${escapeHtml(top.name)}.</div>`
+      : `<div id="sensitivity">🔒 Holds up: even with ${change}, ${escapeHtml(top.name)} would still be ${title}.</div>`);
+  }
+  return lines.length ? `<div class="versus">${lines.join("")}</div>` : "";
+}
+
 function renderAnalysis(analysis, warning = "") {
   const { won, top } = headline(analysis);
   const sorted = [...analysis.players].sort((a, b) => b.share - a.share);
@@ -429,6 +540,10 @@ function renderAnalysis(analysis, warning = "") {
     ? `${escapeHtml(top.name)} (${top.role}) earned ${top.sharePct}% of the credit with a ${top.score.toFixed(1)} impact score.`
     : `${escapeHtml(top.name)} (${top.role}) takes ${top.sharePct}% of the blame with a ${top.score.toFixed(1)} impact score.`;
 
+  // The method is shown open the first time someone sees a verdict, and stays one tap away after that.
+  const firstTime = store.getItem(SEEN_HOW_KEY) !== "1";
+  store.setItem(SEEN_HOW_KEY, "1");
+
   const cards = sorted.map((p) => {
     const cls = p.verdict.startsWith("MVP") ? "mvp" : p.verdict === "Most to blame" ? "blame" : "";
     const shareColor = won ? "var(--gold)" : "var(--lose)";
@@ -437,7 +552,8 @@ function renderAnalysis(analysis, warning = "") {
       const left = b.value >= 0 ? 50 : 50 - width;
       const color = b.value >= 0 ? "var(--win)" : "var(--lose)";
       const faded = b.weight === 0 ? "opacity:.4" : "";
-      return `<div style="${faded}" title="${escapeHtml(b.text)}">${b.label} <span class="meta">${Math.round(b.weight * 100)}%</span></div>
+      const pts = b.weight === 0 ? "" : ` <span class="pts ${b.points >= 0 ? "up" : "down"}">${signed(b.points)}</span>`;
+      return `<div style="${faded}" title="${escapeHtml(b.text)}">${b.label} <span class="meta">${Math.round(b.weight * 100)}%</span>${pts}</div>
               <div class="diverge" style="${faded}" title="${escapeHtml(b.text)}"><div style="left:${left}%;width:${width}%;background:${color}"></div></div>
               <div class="why" style="${faded}">${escapeHtml(b.text)}</div>`;
     }).join("");
@@ -445,6 +561,11 @@ function renderAnalysis(analysis, warning = "") {
       ...p.weaknesses.map((b) => `<li class="minus">${escapeHtml(b.text)}</li>`),
       ...p.strengths.map((b) => `<li class="plus">${escapeHtml(b.text)}</li>`),
     ].join("");
+    const statPoints = p.breakdown.reduce((total, b) => total + b.points, 0);
+    const capped = 6 + statPoints > 10 || 6 + statPoints < 0;
+    const fromStats = `<span class="pts ${statPoints >= 0 ? "up" : "down"}">${signed(capped ? statPoints : p.score - 6)}</span>`;
+    const formula = `<div class="formula">6.0 for an average game ${fromStats} from the stats below = <b>${p.score.toFixed(1)}</b>${capped ? " (scores stop at 0 and 10)" : ""}.
+      Each row shows its role weight and the points it added or took away.</div>`;
     const stamp = p.verdict === "MVP" ? '<span class="stamp carried">Carried</span>'
       : p.verdict === "MVP (lose)" ? '<span class="stamp carried">Tried</span>'
       : p.verdict === "Most to blame" ? '<span class="stamp threw">Threw</span>' : "";
@@ -463,7 +584,8 @@ function renderAnalysis(analysis, warning = "") {
       <div class="share">${won ? "Share of credit" : "Share of blame"}: <b>${p.sharePct}%</b>
         <div class="bar"><div style="width:${p.sharePct}%;background:${shareColor}"></div></div></div>
       <ul class="reasons">${reasons || '<li class="meta">Right on the role average everywhere.</li>'}</ul>
-      <details class="stats"><summary>Stat breakdown vs ${p.role} average (weight)</summary>
+      <details class="stats"><summary>How ${p.score.toFixed(1)} adds up: stats vs the ${p.role} average</summary>
+        ${formula}
         <div class="grid-stats">${statRows}</div></details>
     </article>`;
   }).join("");
@@ -475,26 +597,32 @@ function renderAnalysis(analysis, warning = "") {
       <span class="chip ${close ? "close" : "clear"}">${escapeHtml(callText)} · ${analysis.call.gap.toFixed(1)} pts ${won ? "ahead of the runner-up" : "below the next-lowest player"}</span>
       <button class="link" id="howLink" type="button">How is this decided?</button>
       ${runner}
+      ${versusHtml(analysis, top)}
     </div>
     <div class="row share-row">
       <button class="primary" id="shareImage" type="button">Share result image</button>
+      <button id="previewImage" type="button" hidden>Preview / download</button>
       <button id="copyText" type="button">Copy text for chat</button>
       <button id="save" type="button">Save to squad history</button>
     </div>
     <div class="cards">${cards}</div>
-    <details class="how" id="how"><summary>How is this calculated?</summary>
+    <details class="how" id="how"${firstTime ? " open" : ""}><summary>How is this calculated?</summary>
       <ul>
+        <li><b>Impact score = 6 + 4 × the sum of (role weight × stat result)</b>, kept between 0 and 10. A stat result runs from −1 (nothing where the role expects a lot) through 0 (exactly the role's usual share) to +1 (double it). Open “How … adds up” on any card to see the points each stat added or took away.</li>
         <li>For every stat the app takes the player's share of the team total and compares it with what their role usually gets (a Roam is expected to have low gold; a Gold Laner low damage taken).</li>
         <li>Each stat is weighted by role (shown as % in the breakdown) and the result is mapped to a 0–10 impact score, where about 6 is an average game. The KDA target is role-aware too: 2.5 for Roam and EXP Lane, 3 for the others.</li>
         <li>Blame share in a loss is proportional to (10 − score)²; credit share in a win to score². </li>
         <li>How sure the call is depends on the impact-score gap between the top player and the next one: <b>Clear call</b> at ${CLEAR_GAP}+ point, <b>Fairly clear</b> from ${MARGIN_GAP} to ${CLEAR_GAP}, and <b>Close call</b> under ${MARGIN_GAP}. In a close call the runner-up is named and every card within ${MARGIN_GAP} of the top player is tagged, because small stat differences could flip it.</li>
         <li>The chip also says when data is missing (fewer than 5 players or blank stats), since blanks count as 0.</li>
+        <li>“Why X and not Y?” lists the two stats with the biggest point gap between the top two players. “Holds up / Could flip” re-scores the match with up to 3 deaths fewer (loss) or more (win) for the called player, to show whether one fight would have changed the call.</li>
         <li>Not measured: map awareness, vision, rotations, objective calls, the draft and early-game mistakes.</li>
       </ul>
     </details>`;
   document.getElementById("save").onclick = saveMatch;
   document.getElementById("copyText").onclick = copySummary;
   document.getElementById("shareImage").onclick = shareImage;
+  document.getElementById("previewImage").onclick = openPreview;
+  prepareShare();
   document.getElementById("howLink").onclick = () => {
     const how = document.getElementById("how");
     how.open = true;
@@ -513,8 +641,12 @@ function summaryText(analysis) {
     ...ranked.map((p) => `${p.score.toFixed(1)}  ${p.name} · ${heroRole(p)} · ${p.kills}/${p.deaths}/${p.assists} · ${verdictLabel(p.verdict)}`),
     "",
     `Why ${top.name}: ${(won ? top.strengths : top.weaknesses).map((b) => b.text).join("; ") || "closest to the role average"}`,
-    "— Who Threw? MLBB analyzer",
   ];
+  const { deciders, runnerUp } = analysis.call;
+  if (runnerUp && deciders && deciders.length) {
+    lines.push(`Why not ${runnerUp}: ${deciders.map((d) => d.text).join("; ")}`);
+  }
+  lines.push("— Who Threw? MLBB analyzer");
   return lines.join("\n");
 }
 
@@ -578,7 +710,8 @@ function drawResultImage(analysis) {
   const { won, top } = headline(analysis);
   const ranked = [...analysis.players].sort((a, b) => b.share - a.share);
   const W = 1080;
-  const why = (won ? top.strengths : top.weaknesses).slice(0, 2).map((b) => b.text).join(" · ");
+  const why = (won ? top.strengths : top.weaknesses).slice(0, 2).map((b) => b.brief).join(" · ");
+  const BAR_WIDTH = 720;
   const ROWS_TOP = 420;
   const H = ROWS_TOP + 20 + ranked.length * 150 + 120;
   const canvas = document.createElement("canvas");
@@ -610,6 +743,12 @@ function drawResultImage(analysis) {
     g.font = "500 28px system-ui, Segoe UI, sans-serif";
     wrapText(g, `Why: ${why}`, 70, 295, W - 140, 38, 2);
   }
+  g.fillStyle = "#9aa4c2";
+  g.font = "700 24px system-ui, Segoe UI, sans-serif";
+  g.fillText(`PLAYER · HERO · K/D/A · BAR = SHARE OF ${won ? "CREDIT" : "BLAME"}`, 80, ROWS_TOP - 38);
+  g.textAlign = "right";
+  g.fillText("IMPACT /10", W - 80, ROWS_TOP - 38);
+  g.textAlign = "left";
   ranked.forEach((p, i) => {
     const y = ROWS_TOP + i * 150;
     g.fillStyle = i === 0 ? "rgba(255,255,255,.07)" : "rgba(255,255,255,.035)";
@@ -626,12 +765,12 @@ function drawResultImage(analysis) {
     g.fillText(p.score.toFixed(1), W - 80, y + 45);
     g.fillStyle = "#9aa4c2";
     g.font = "600 28px system-ui, Segoe UI, sans-serif";
-    g.fillText(`${p.sharePct}%`, W - 80, y + 90);
+    g.fillText(`${p.sharePct}% ${won ? "credit" : "blame"}`, W - 80, y + 94);
     g.textAlign = "left";
     g.fillStyle = "#0a1124";
-    g.fillRect(80, y + 92, 760, 12);
+    g.fillRect(80, y + 88, BAR_WIDTH, 12);
     g.fillStyle = won ? "#f2c14e" : accent;
-    g.fillRect(80, y + 92, 760 * (p.sharePct / 100), 12);
+    g.fillRect(80, y + 88, BAR_WIDTH * (p.sharePct / 100), 12);
   });
   g.fillStyle = "#6c7697";
   g.font = "500 26px system-ui, Segoe UI, sans-serif";
@@ -639,41 +778,69 @@ function drawResultImage(analysis) {
   return canvas;
 }
 
-// "Share result image" first shows a preview, then shares (phone) or downloads.
-function shareImage() {
-  const canvas = drawResultImage(lastAnalysis);
-  const dialog = document.getElementById("sharePreview");
-  canvas.toBlob((blob) => {
+// The image is drawn right after the analysis, so the Share button can open the phone's share sheet
+// in the same tap (browsers only allow sharing straight from a tap, not after slow work).
+const canShareFile = (file) => Boolean(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+
+function prepareShare() {
+  const analysis = lastAnalysis;
+  if (shareAsset) URL.revokeObjectURL(shareAsset.url);
+  shareAsset = null;
+  drawResultImage(analysis).toBlob((blob) => {
+    if (!blob || analysis !== lastAnalysis) return;
     const file = new File([blob], "mlbb-result.png", { type: "image/png" });
-    const url = URL.createObjectURL(blob);
-    const canShareFile = Boolean(navigator.canShare && navigator.canShare({ files: [file] }));
-    const shareBtn = document.getElementById("sharePreviewShare");
-    document.getElementById("sharePreviewImg").src = url;
-    shareBtn.hidden = !canShareFile;
-    const download = () => {
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "mlbb-result.png";
-      link.click();
-      showToast("Result image downloaded");
-    };
-    shareBtn.onclick = async () => {
-      try {
-        await navigator.share({ files: [file], text: summaryText(lastAnalysis) });
-        dialog.close();
-      } catch (e) {
-        if (e.name !== "AbortError") download();
-      }
-    };
-    document.getElementById("sharePreviewDownload").onclick = download;
-    document.getElementById("sharePreviewClose").onclick = () => dialog.close();
-    dialog.onclose = () => setTimeout(() => URL.revokeObjectURL(url), 2000);
-    if (typeof dialog.showModal === "function") {
-      dialog.showModal();
-    } else {
-      download();
-    }
+    shareAsset = { file, url: URL.createObjectURL(blob) };
+    const preview = document.getElementById("previewImage");
+    if (preview) preview.hidden = !canShareFile(file);
   }, "image/png");
+}
+
+function downloadImage() {
+  const link = document.createElement("a");
+  link.href = shareAsset.url;
+  link.download = "mlbb-result.png";
+  link.click();
+  showToast("Result image downloaded");
+}
+
+// Phones: one tap opens the share sheet with the image and the text. Elsewhere: preview with a download button.
+async function shareImage() {
+  if (!shareAsset) {
+    showToast("Still drawing the image — tap again in a second");
+    return;
+  }
+  if (!canShareFile(shareAsset.file)) {
+    openPreview();
+    return;
+  }
+  try {
+    await navigator.share({ files: [shareAsset.file], text: summaryText(lastAnalysis) });
+  } catch (e) {
+    if (e.name !== "AbortError") openPreview();
+  }
+}
+
+function openPreview() {
+  if (!shareAsset) return;
+  const dialog = document.getElementById("sharePreview");
+  const shareBtn = document.getElementById("sharePreviewShare");
+  document.getElementById("sharePreviewImg").src = shareAsset.url;
+  shareBtn.hidden = !canShareFile(shareAsset.file);
+  shareBtn.onclick = async () => {
+    try {
+      await navigator.share({ files: [shareAsset.file], text: summaryText(lastAnalysis) });
+      dialog.close();
+    } catch (e) {
+      if (e.name !== "AbortError") downloadImage();
+    }
+  };
+  document.getElementById("sharePreviewDownload").onclick = downloadImage;
+  document.getElementById("sharePreviewClose").onclick = () => dialog.close();
+  if (typeof dialog.showModal === "function") {
+    dialog.showModal();
+  } else {
+    downloadImage();
+  }
 }
 
 function loadHistory() {
@@ -729,35 +896,31 @@ function renderHistory() {
     el.innerHTML = `<div class="meta">No saved matches yet. Analyze a match and press "Save to squad history" to see who throws most often.</div>`;
     return;
   }
-  const byName = {};
-  for (const match of history) {
-    for (const p of match.players) {
-      const key = p.name.toLowerCase();
-      const s = byName[key] ||= { name: p.name, games: 0, wins: 0, scoreSum: 0, mvp: 0, blame: 0, blameShare: 0, losses: 0 };
-      s.games++;
-      s.scoreSum += p.score;
-      if (match.result === "win") s.wins++;
-      else {
-        s.losses++;
-        s.blameShare += p.share;
-      }
-      if (p.verdict === "MVP" || p.verdict === "MVP (lose)") s.mvp++;
-      if (p.verdict === "Most to blame") s.blame++;
-    }
-  }
-  const rows = Object.values(byName).sort((a, b) => b.scoreSum / b.games - a.scoreSum / a.games).map((s) => `
+  const rows = squadStats(history).map((s) => {
+    const bars = s.recent.map((g) =>
+      `<i style="height:${Math.max(10, g.score * 10)}%;background:${g.result === "win" ? "var(--win)" : "var(--lose)"}"></i>`).join("");
+    const formLabel = `Last ${plural(s.recent.length, "game")}, oldest first: ${s.recent.map((g) => `${g.score.toFixed(1)} ${g.result === "win" ? "win" : "loss"}`).join(", ")}`;
+    const trend = s.trend === null || Math.abs(s.trend) < 0.05 ? ""
+      : `<span class="trend ${s.trend > 0 ? "up" : "down"}" title="Last ${RECENT_GAMES} games against the games before them">${s.trend > 0 ? "▲" : "▼"} ${Math.abs(s.trend).toFixed(1)}</span>`;
+    return `
     <tr><td><b>${escapeHtml(s.name)}</b></td><td>${s.games}</td><td>${Math.round((s.wins / s.games) * 100)}%</td>
-    <td>${(s.scoreSum / s.games).toFixed(1)}</td><td>${s.mvp}</td><td>${s.blame}</td>
-    <td>${s.losses ? Math.round((s.blameShare / s.losses) * 100) + "%" : "—"}</td></tr>`).join("");
+    <td>${s.avg.toFixed(1)}</td>
+    <td><span class="form" role="img" aria-label="${escapeHtml(formLabel)}" title="${escapeHtml(formLabel)}">${bars}</span>${s.recentAvg.toFixed(1)} ${trend}</td>
+    <td>${s.mvp}</td><td>${s.blame}</td>
+    <td>${s.avgBlame === null ? "—" : Math.round(s.avgBlame * 100) + "%"}</td></tr>`;
+  }).join("");
   const matches = [...history].reverse().map((m) => {
     const top = m.players.find((p) => (m.result === "win" ? p.verdict === "MVP" : p.verdict === "Most to blame")) || m.players[0];
     const when = new Date(m.date).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    const scores = [...m.players].sort((a, b) => b.score - a.score)
+      .map((p) => `${escapeHtml(p.name)} ${p.score.toFixed(1)}`).join(" · ");
     return `<li><span><span class="dot" style="background:${m.result === "win" ? "var(--win)" : "var(--lose)"}"></span>
-      ${when} · ${m.result === "win" ? "Win" : "Loss"} · ${m.result === "win" ? "MVP" : "Blame"}: <b>${escapeHtml(top.name)}</b></span>
+      ${when} · ${m.result === "win" ? "Win" : "Loss"} · ${m.result === "win" ? "MVP" : "Blame"}: <b>${escapeHtml(top.name)}</b>
+      <small>${scores}</small></span>
       <button class="small ghost" type="button" data-delete="${m.id}" aria-label="Delete match from ${when}">Delete</button></li>`;
   }).join("");
   el.innerHTML = `<div class="table-wrap"><table class="history">
-    <thead><tr><th>Player</th><th>Games</th><th>Win %</th><th>Avg score</th><th>MVPs</th><th>Most to blame</th><th>Avg blame in losses</th></tr></thead>
+    <thead><tr><th>Player</th><th>Games</th><th>Win %</th><th>Avg score</th><th title="Bars: one per game, taller = higher score, green = win, red = loss">Form (last ${RECENT_GAMES})</th><th>MVPs</th><th>Most to blame</th><th>Avg blame in losses</th></tr></thead>
     <tbody>${rows}</tbody></table></div>
     <ul class="matches">${matches}</ul>`;
   el.querySelectorAll("[data-delete]").forEach((b) => {
@@ -798,7 +961,29 @@ const EXAMPLE = [
 
 // ---- Import from pasted text or a screenshot ----
 const TESSERACT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+const OCR_CACHE = "whothrew-ocr-v1"; // filled by sw.js the first time the reader runs
+const OCR_PARTS = ["tesseract.min.js", "worker.min.js", "tesseract-core", "traineddata"];
 const importStatus = document.getElementById("importStatus");
+
+// True when every file the screenshot reader needs is saved on this device and the offline worker is in charge.
+async function ocrSavedOffline() {
+  try {
+    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return false;
+    const saved = (await (await caches.open(OCR_CACHE)).keys()).map((request) => request.url);
+    return OCR_PARTS.every((part) => saved.some((url) => url.includes(part)));
+  } catch {
+    return false;
+  }
+}
+
+async function refreshOcrNote() {
+  const ready = await ocrSavedOffline();
+  store.setItem(OCR_READY_KEY, ready ? "1" : "0");
+  document.getElementById("ocrOffline").textContent = ready
+    ? "✓ Screenshot reader saved on this device — it now works without internet."
+    : "";
+  return ready;
+}
 
 function setImportStatus(message, warn = false) {
   importStatus.textContent = message;
@@ -826,6 +1011,7 @@ function applyImport(text) {
     return row;
   });
   fillPlayers(merged);
+  exampleLoaded = false;
   [...playersEl.children].forEach((card, i) => card.classList.toggle("filled", i < players.length));
   if (result) setOutcome(result);
   saveDraft();
@@ -874,12 +1060,14 @@ async function prepareScreenshot(file) {
 
 async function readScreenshot(file) {
   if (!file) return;
-  if (!window.Tesseract && navigator.onLine === false) {
+  if (navigator.onLine === false && !(await ocrSavedOffline())) {
     setImportStatus("You're offline, and the screenshot reader needs a one-time download. Copy the text from the screenshot (Live Text / Google Lens) and paste it above instead.", true);
     return;
   }
   try {
-    setImportStatus("Loading the text reader (one-time download, a few MB)…");
+    setImportStatus(store.getItem(OCR_READY_KEY) === "1"
+      ? "Loading the text reader saved on this device…"
+      : "Loading the text reader (one-time download, a few MB)…");
     await loadScript(TESSERACT_URL);
     const canvas = await prepareScreenshot(file);
     setImportStatus("Reading the screenshot…");
@@ -889,6 +1077,7 @@ async function readScreenshot(file) {
       },
     });
     document.getElementById("importText").value = data.text.trim();
+    refreshOcrNote();
     if (!applyImport(data.text)) {
       setImportStatus("Couldn't find player rows in that screenshot. The text it read is in the box above: tidy it to one player per line and press Fill players, or type the numbers in.", true);
     }
@@ -933,24 +1122,73 @@ function splitKda(input) {
 
 playersEl.addEventListener("input", (event) => {
   if (["kills", "deaths", "assists"].includes(event.target.dataset.f)) splitKda(event.target);
+  if (event.target.dataset.f === "name") exampleLoaded = false; // a typed name makes it the user's own squad
   saveDraft();
 });
-playersEl.addEventListener("change", () => {
+playersEl.addEventListener("change", (event) => {
+  if (event.target.dataset.f === "name") recallPlayer(event.target.closest(".pcard"));
   syncRoleColours();
   saveDraft();
 });
+// Enter (the keypad's Next / Done key) moves through the boxes; on the last one it analyzes.
+playersEl.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.isComposing || event.target.tagName !== "INPUT") return;
+  event.preventDefault();
+  const card = event.target.closest(".pcard");
+  const inputs = [...playersEl.querySelectorAll("input")];
+  let next = inputs[inputs.indexOf(event.target) + 1];
+  if (event.target.dataset.f === "name") {
+    recallPlayer(card);
+    if (card.querySelector("[data-f=hero]").value.trim()) next = card.querySelector("[data-f=kills]");
+  }
+  if (!next) {
+    event.target.blur();
+    document.getElementById("analyze").click();
+    return;
+  }
+  next.focus();
+  next.select();
+});
 document.getElementById("demo").onclick = () => {
   fillPlayers(EXAMPLE);
+  exampleLoaded = true;
   setOutcome("lose");
 };
 document.getElementById("newMatch").onclick = () => {
   fillPlayers(readRaw().map((p) => ({ name: p.name, hero: p.hero, role: p.role })));
   document.getElementById("output").innerHTML = "";
   saveDraft();
+  focusFirstEmpty();
   showToast("Squad kept — enter the new numbers");
+};
+document.getElementById("lastSquad").onclick = () => {
+  const before = readRaw();
+  const wasExample = exampleLoaded;
+  fillPlayers(loadJson(SQUAD_KEY, []).map(({ name, hero, role }) => ({ name, hero, role })));
+  exampleLoaded = false;
+  document.getElementById("output").innerHTML = "";
+  saveDraft();
+  focusFirstEmpty();
+  showToast("Last squad filled in — enter this match's numbers", "Undo", () => {
+    fillPlayers(before);
+    exampleLoaded = wasExample;
+    saveDraft();
+  });
+};
+document.getElementById("forgetPlayers").onclick = () => {
+  const saved = [ROSTER_KEY, SQUAD_KEY].map((key) => [key, store.getItem(key)]);
+  saved.forEach(([key]) => store.removeItem(key));
+  refreshRosterUi();
+  showToast("Saved players forgotten", "Undo", () => {
+    saved.forEach(([key, value]) => {
+      if (value !== null) store.setItem(key, value);
+    });
+    refreshRosterUi();
+  });
 };
 document.getElementById("clear").onclick = () => {
   fillPlayers([]);
+  exampleLoaded = false;
   document.getElementById("output").innerHTML = "";
   saveDraft();
 };
@@ -958,7 +1196,9 @@ document.getElementById("analyze").onclick = () => {
   const errorEl = document.getElementById("error");
   errorEl.textContent = "";
   try {
-    lastAnalysis = analyzeMatch({ result: outcome, players: readPlayers() });
+    const players = readPlayers();
+    lastAnalysis = analyzeMatch({ result: outcome, players });
+    if (!exampleLoaded) rememberSquad(players);
     renderAnalysis(lastAnalysis, warningSummary(readRaw()));
     const warnings = dataWarnings(readRaw());
     if (warnings.length) {
@@ -985,6 +1225,12 @@ document.getElementById("clearHistory").onclick = () => {
 buildPlayerCards();
 loadDraft();
 renderHistory();
+refreshRosterUi();
+
+// Offline: sw.js keeps the app itself and, after its first use, the screenshot reader on this device.
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(refreshOcrNote).catch(() => {});
+}
 </script>
 </body>
 </html>

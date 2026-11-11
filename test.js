@@ -1,6 +1,6 @@
 // Run: node test.js
 const assert = require("assert");
-const { analyzeMatch, roundedPercents, CLEAR_GAP, MARGIN_GAP } = require("./scoring.js");
+const { analyzeMatch, roundedPercents, squadStats, CLEAR_GAP, MARGIN_GAP, RECENT_GAMES } = require("./scoring.js");
 
 const sumShares = (a) => a.players.reduce((t, p) => t + p.share, 0);
 const byName = (a, name) => a.players.find((p) => p.name === name);
@@ -170,6 +170,58 @@ assert.strictEqual(blamed.withinMargin, false);
 assert.strictEqual(byName(nearTie, "A").withinMargin, false);
 // A clear call flags nobody.
 if (!loss.call.close) assert.ok(loss.players.every((p) => !p.withinMargin) || loss.call.gap < MARGIN_GAP);
+
+// 12. Reasons carry the raw numbers, and every stat reports its contribution in score points.
+const darren = byName(loss, "Darren");
+const darrenGold = darren.breakdown.find((b) => b.stat === "gold");
+assert.ok(darrenGold.text.startsWith("7,600 gold = "), darrenGold.text);
+assert.ok(/about [\d,]+\)$/.test(darrenGold.text), darrenGold.text);
+assert.ok(darrenGold.brief.includes("of team gold") && !darrenGold.brief.includes("7,600"), darrenGold.brief);
+assert.ok(darren.breakdown.find((b) => b.stat === "kp").text.startsWith("In 5 of 15 team kills"));
+assert.ok(darren.breakdown.find((b) => b.stat === "kda").text.includes("from 2/11/3"));
+for (const a of [loss, win, avg]) {
+  for (const p of a.players) {
+    const fromPoints = 6 + p.breakdown.reduce((t, b) => t + b.points, 0);
+    assert.ok(Math.abs(Math.min(10, Math.max(0, fromPoints)) - p.rawScore) < 1e-9, `${p.name}: 6 + points = ${fromPoints}, score ${p.rawScore}`);
+  }
+}
+
+// 13. Deciders: the stats that separate the blamed player from the runner-up, largest gap first.
+assert.ok(loss.call.deciders.length >= 1 && loss.call.deciders.length <= 2);
+assert.ok(loss.call.deciders[0].points > 0);
+assert.ok(loss.call.deciders.every((d, i, all) => i === 0 || all[i - 1].points >= d.points));
+assert.ok(loss.call.deciders.some((d) => d.stat === "deaths" && d.text === "11 vs 6 deaths"), JSON.stringify(loss.call.deciders));
+assert.ok(win.call.deciders[0].points > 0);
+
+// 14. Sensitivity: a clear call survives 3 fewer deaths; a near-tie flips on the first one.
+assert.deepStrictEqual(loss.call.sensitivity, { flips: false, steps: 3, to: null });
+assert.strictEqual(nearTie.call.sensitivity.flips, true);
+assert.strictEqual(nearTie.call.sensitivity.steps, 1);
+assert.strictEqual(nearTie.call.sensitivity.to, nearTie.call.runnerUp);
+assert.strictEqual(win.call.sensitivity.flips, false);
+// A blamed player with no deaths has nothing to take away: no steps are tried.
+assert.strictEqual(analyzeMatch({ result: "lose", players: edge.players.map(({ name, role }) => ({ ...twin, name, role, deaths: 0 })) }).call.sensitivity.steps, 0);
+
+// 15. Squad stats: lifetime numbers, the last 5 scores, and a trend once there are older games.
+const game = (result, score, verdict = "Okay") => ({ result, players: [{ name: "Darren", score, share: 0.4, verdict }, { name: "kai", score: 6, share: 0.1, verdict: "Okay" }] });
+const shortHistory = [game("lose", 3, "Most to blame"), game("win", 7, "MVP")];
+const shortStats = squadStats(shortHistory);
+assert.deepStrictEqual(shortStats.map((s) => s.name), ["kai", "Darren"]);
+const darrenShort = shortStats[1];
+assert.strictEqual(darrenShort.games, 2);
+assert.strictEqual(darrenShort.avg, 5);
+assert.strictEqual(darrenShort.trend, null);
+assert.strictEqual(darrenShort.mvp, 1);
+assert.strictEqual(darrenShort.blame, 1);
+assert.strictEqual(darrenShort.avgBlame, 0.4);
+assert.deepStrictEqual(darrenShort.recent.map((r) => r.score), [3, 7]);
+const longHistory = [game("lose", 2), game("lose", 4), ...Array.from({ length: RECENT_GAMES }, () => game("win", 8))];
+const darrenLong = squadStats(longHistory).find((s) => s.name === "Darren");
+assert.strictEqual(darrenLong.recent.length, RECENT_GAMES);
+assert.strictEqual(darrenLong.recentAvg, 8);
+assert.strictEqual(darrenLong.trend, 5);
+assert.strictEqual(squadStats(longHistory).find((s) => s.name === "kai").trend, 0);
+assert.deepStrictEqual(squadStats([]), []);
 
 for (const [label, a] of [["loss", loss], ["win", win]]) {
   console.log(`\n${label}:`);

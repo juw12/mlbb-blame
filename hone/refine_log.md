@@ -69,3 +69,32 @@ orders agree. Kept v4.
 Remaining council suggestions (not done): one-tap share without the preview step, absolute stat values beside the
 percentages, remember returning players' hero/role, last-5 trend in history, offline OCR (Tesseract still needs one
 download), auto-advance between stat fields.
+
+## Round 4 (2026-11-11) - v5
+
+Targets: every remaining v4 council suggestion (one-tap share, absolute stat values, remembered players, last-5 trend,
+offline OCR, auto-advance between fields).
+
+Changes (v5):
+- "Why X and not Y?": the two stats that separate the top two players, in points ("11 vs 6 deaths -0.7 pts").
+- Sensitivity line under the verdict: "Holds up" / "Could flip", varying the called player's deaths by +-3.
+- Per-card maths: "How 4.0 adds up" (6.0 for an average game +- the points from each stat, with the raw numbers).
+- "How is this decided?" opens by itself on the first analysis only.
+- One-tap share on phones: the PNG is pre-rendered after analysis, so `navigator.share` runs inside the tap with
+  file + text. Desktop keeps preview / download. Image has a caption row and "38% blame" per row; text has "Why not <runner-up>".
+- Roster: hero and role remembered per name, "Last squad" (Undo), "Forget saved players" (Undo), Enter/Next walks the
+  inputs. The built-in example squad is never remembered.
+- History: "Form (last 5)" bars with a trend arrow, and every player's score per match.
+- Offline: `sw.js` (shell cache `whothrew-shell-v5`, OCR cache `whothrew-ocr-v1`, deletes only `whothrew-*` caches),
+  `manifest.webmanifest` and icons, so the page installs and the screenshot reader works without a connection after one use.
+
+Checks: `node test.js` pass; `hone/e2e.py` 44/44 PASS (incl. OCR and both phone-share steps); `hone/offline.py` 7/7
+(4 reader files, 7.1 MB measured, then app + analysis + OCR with the network dead); `hone/check.py v5` gates 5/5.
+Tests reach the CDN through `HONE_PROXY` (default `http://proxy8.intra:80`).
+
+Council (Pega-Vision, Pega-Thinking, GLM-5.3-Flash): v5 single score 9.1 (v4 was 9.1; judge totals 8.75 / 9.1 / 9.55);
+pairwise v5 > v4 3-0, both orders agree. Kept v5. Absolute gain 0.0 < MIN_GAIN -> plateau count 1.
+
+Remaining council suggestions: data caveats in the shared text and image, clearer "Tried" stamp and decider labels,
+stacked phone layout for the leaderboard, import easier to find, Undo for Clear all, stat bars on each card,
+sensitivity beyond deaths, text-only share fallback, richer share image.

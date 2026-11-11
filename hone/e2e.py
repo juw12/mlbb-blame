@@ -12,6 +12,10 @@ from playwright.sync_api import sync_playwright
 APP = Path(__file__).resolve().parent.parent
 URL = (APP / "index.html").as_uri()
 failures = []
+# The CDN that hosts the screenshot reader is only reachable through the office proxy on this PC.
+# Set HONE_PROXY="" on a network with direct internet. file:// and localhost never use the proxy.
+PROXY = os.environ.get("HONE_PROXY", "http://proxy8.intra:80")
+NETWORK_ARGS = [f"--proxy-server={PROXY}"] if PROXY else ["--no-proxy-server"]
 
 
 def step(name, ok, detail=""):
@@ -21,9 +25,11 @@ def step(name, ok, detail=""):
 
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(args=["--no-proxy-server"])
+    browser = p.chromium.launch(args=NETWORK_ARGS)
     context = browser.new_context(viewport={"width": 390, "height": 800}, accept_downloads=True)
     context.grant_permissions(["clipboard-read", "clipboard-write"])
+    # Desktop path: no Web Share, so "Share result image" opens the preview dialog (the phone path is tested further down).
+    context.add_init_script("delete Navigator.prototype.share; delete Navigator.prototype.canShare;")
     page = context.new_page()
     errors = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
@@ -34,6 +40,22 @@ with sync_playwright() as p:
     page.click("#analyze")
     page.wait_for_timeout(400)
     step("analyze renders 5 cards", page.locator("article.card").count() == 5)
+
+    # v5: why this player and not the runner-up, and whether the call survives a slightly different game
+    versus = page.inner_text(".banner .versus") if page.locator(".banner .versus").count() else ""
+    step("banner explains why not the runner-up", "Why Darren and not" in versus and "deaths" in versus and "pts" in versus,
+         versus[:110].replace("\n", " | "))
+    sensitivity = page.inner_text("#sensitivity") if page.locator("#sensitivity").count() else ""
+    step("banner says if the call holds up", "fewer death" in sensitivity and "Darren" in sensitivity, sensitivity)
+    step("method is open on the first analysis", page.evaluate("() => document.getElementById('how').open")
+         and "6 + 4" in page.inner_text("#how"))
+    step("example squad is not remembered", page.locator("#lastSquad").is_hidden() and page.locator("#forgetPlayers").is_hidden())
+    page.click("article.card.blame details.stats summary")
+    formula = page.inner_text("article.card.blame .formula")
+    points = page.locator("article.card.blame .grid-stats .pts").count()
+    raw_gold = "7,600 gold" in page.inner_text("article.card.blame")
+    step("card shows the score maths and raw numbers", formula.startswith("6.0 for an average game") and "= 4." in formula
+         and points == 7 and raw_gold, f"{formula[:70]} | pts={points} raw={raw_gold}")
 
     page.click("#copyText")
     page.wait_for_timeout(300)
@@ -56,6 +78,10 @@ with sync_playwright() as p:
     page.click("#save")
     page.wait_for_timeout(200)
     step("save adds history row", page.locator(".matches li").count() == 1)
+    form_bars = page.locator("table.history .form i").count()
+    match_scores = page.inner_text(".matches li small")
+    step("history shows form bars and every score", form_bars == 5 and "Darren" in match_scores and "Juwen" in match_scores,
+         f"bars={form_bars} | {match_scores}")
 
     page.click("[data-delete]")
     page.wait_for_timeout(200)
@@ -95,6 +121,7 @@ with sync_playwright() as p:
     page.click("#analyze")
     page.wait_for_timeout(300)
     step("win shows MVP banner", "MVP:" in page.inner_text(".banner"))
+    step("method stays closed after the first time", not page.evaluate("() => document.getElementById('how').open"))
 
     page.fill(".pcard:nth-child(2) [data-f=gold]", "abc")
     page.click("#analyze")
@@ -123,6 +150,43 @@ with sync_playwright() as p:
     page.click("#analyze")
     page.wait_for_timeout(300)
     step("pasted match analyzes", "most to blame: Darren" in page.inner_text(".banner"))
+
+    # v5: an analyzed squad is remembered - names recall hero and role, Enter walks the boxes, Last squad refills
+    step("own squad is remembered", page.locator("#lastSquad").is_visible() and page.locator("#forgetPlayers").is_visible())
+    kept_draft = page.evaluate("() => localStorage.getItem('mlbb-analyzer-draft')")
+    page.click("#clear")
+    page.fill(".pcard:nth-child(1) [data-f=name]", "darren")
+    page.press(".pcard:nth-child(1) [data-f=name]", "Tab")
+    recalled = [page.input_value(f".pcard:nth-child(1) [data-f={f}]") for f in ("hero", "role")]
+    step("known name fills hero and role", recalled == ["Fanny", "Jungle"], str(recalled))
+    page.fill(".pcard:nth-child(2) [data-f=name]", "Kai")
+    page.press(".pcard:nth-child(2) [data-f=name]", "Enter")
+    after_name = page.evaluate("() => [document.activeElement.dataset.f, document.activeElement.closest('.pcard').dataset.index]")
+    page.keyboard.type("4")
+    page.keyboard.press("Enter")
+    after_kills = page.evaluate("() => document.activeElement.dataset.f")
+    step("Enter moves to the next box", after_name == ["kills", "1"] and after_kills == "deaths"
+         and page.input_value(".pcard:nth-child(2) [data-f=hero]") == "Tigreal", f"{after_name} then {after_kills}")
+    page.click("#lastSquad")
+    page.wait_for_timeout(200)
+    names = page.eval_on_selector_all("[data-f=name]", "els => els.map(e => e.value)")
+    kills = page.eval_on_selector_all("[data-f=kills]", "els => els.map(e => e.value)")
+    focused = page.evaluate("() => [document.activeElement.dataset.f, document.activeElement.closest('.pcard').dataset.index]")
+    step("last squad refills names and waits at the first number",
+         names == ["Juwen", "Ah Beng", "Mei", "Darren", "Kai"] and all(k == "" for k in kills) and focused == ["kills", "0"],
+         f"{names} focus={focused}")
+    page.click("#forgetPlayers")
+    page.wait_for_timeout(200)
+    forgotten = page.locator("#lastSquad").is_hidden()
+    page.click("#toast button")
+    page.wait_for_timeout(200)
+    step("forget saved players, with undo", forgotten and page.locator("#lastSquad").is_visible())
+    page.evaluate("draft => localStorage.setItem('mlbb-analyzer-draft', draft)", kept_draft)
+    page.reload()
+    page.wait_for_timeout(400)
+    page.click("#importBox summary")
+    page.click("#analyze")
+    page.wait_for_timeout(300)
     step("THREW stamp on blame card", page.locator("article.card.blame .stamp.threw").count() == 1)
     step("role colour attribute on cards", page.locator('article.card[data-role="Jungle"]').count() == 1)
     step("complete entry shows no data warning", page.locator(".data-warn").count() == 0)
@@ -211,6 +275,41 @@ with sync_playwright() as p:
              f"{status[:60]} | {names} | {heroes} | deaths={deaths} gold={gold}")
 
     step("no console errors", not errors, "; ".join(errors[:3]))
+
+    # v5: on a phone (Web Share with files) the Share button opens the share sheet in one tap, no dialog first
+    phone = browser.new_context(viewport={"width": 390, "height": 800})
+    phone.add_init_script("""
+        window.__shares = [];
+        Object.defineProperty(Navigator.prototype, "canShare", { configurable: true, value: (data) => Boolean(data) });
+        Object.defineProperty(Navigator.prototype, "share", {
+          configurable: true,
+          value: async (data) => {
+            window.__shares.push({
+              text: data.text || "",
+              files: (data.files || []).map((file) => ({ name: file.name, type: file.type, size: file.size })),
+            });
+          },
+        });
+    """)
+    phone_page = phone.new_page()
+    phone_errors = []
+    phone_page.on("pageerror", lambda exc: phone_errors.append(str(exc)))
+    phone_page.goto(URL)
+    phone_page.click("#demo")
+    phone_page.click("#analyze")
+    phone_page.wait_for_selector("#previewImage:not([hidden])", timeout=5000)
+    phone_page.click("#shareImage")
+    phone_page.wait_for_timeout(300)
+    shares = phone_page.evaluate("() => window.__shares")
+    dialog_open = phone_page.evaluate("() => document.getElementById('sharePreview').open")
+    one_tap = (len(shares) == 1 and shares[0]["files"] and shares[0]["files"][0]["type"] == "image/png"
+               and shares[0]["files"][0]["size"] > 20000 and "most to blame: Darren" in shares[0]["text"]
+               and "Why not" in shares[0]["text"] and not dialog_open)
+    step("phone: one tap shares the PNG and the text", bool(one_tap), json.dumps(shares)[:150])
+    phone_page.click("#previewImage")
+    phone_page.wait_for_selector("#sharePreview[open]", timeout=5000)
+    step("phone: preview is still one tap away", phone_page.locator("#sharePreviewShare").is_visible() and not phone_errors,
+         "; ".join(phone_errors[:2]))
 
 print("E2E", "OK" if not failures else f"FAILED: {failures}", flush=True)
 os._exit(1 if failures else 0)

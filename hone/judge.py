@@ -12,7 +12,7 @@ APP = Path(__file__).resolve().parent.parent
 HONE = APP / "hone"
 PY = sys.executable
 COUNCIL = Path.home() / ".vector/skills/hone/council/council.py"
-SOURCES = ["index.html", "scoring.js", "importer.js"]
+SOURCES = ["index.html", "scoring.js", "importer.js", "sw.js"]  # sw.js exists from v5 on
 SHOTS = ["result_390.png", "result_1280.png", "idle_390.png"]
 
 
