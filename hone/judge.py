@@ -12,7 +12,7 @@ APP = Path(__file__).resolve().parent.parent
 HONE = APP / "hone"
 PY = sys.executable
 COUNCIL = Path.home() / ".vector/skills/hone/council/council.py"
-SOURCES = ["index.html", "scoring.js"]
+SOURCES = ["index.html", "scoring.js", "importer.js"]
 SHOTS = ["result_390.png", "result_1280.png", "idle_390.png"]
 
 
@@ -28,7 +28,8 @@ def snapshot(tag):
     if not source_dir.exists():
         source_dir = APP
     for name in SOURCES:
-        parts.append(f"\n## {name}\n```\n{(source_dir / name).read_text(encoding='utf-8')}\n```")
+        if (source_dir / name).exists():
+            parts.append(f"\n## {name}\n```\n{(source_dir / name).read_text(encoding='utf-8')}\n```")
     path = versions / f"{tag}.md"
     path.write_text("\n".join(parts), encoding="utf-8")
     return path

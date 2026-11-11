@@ -16,7 +16,9 @@ const EXPECTED_SHARE = {
 const EXPECTED_KP = { "Gold Lane": 0.60, "EXP Lane": 0.55, "Mid Lane": 0.65, "Jungle": 0.65, "Roam": 0.70 };
 
 // Good (K + A) / D ratio.
-const KDA_TARGET = 3;
+// KDA a decent game reaches, per role (app estimates, not Moonton data).
+// Tanks and EXP laners trade their life for the team, so their target is lower.
+const KDA_TARGET = { "Gold Lane": 3, "EXP Lane": 2.5, "Mid Lane": 3, "Jungle": 3, "Roam": 2.5 };
 
 // How much each stat matters for each role (each row sums to 1).
 const WEIGHTS = {
@@ -70,14 +72,14 @@ function analyzeMatch(match) {
       turret: { actual: share("turret", p.turret), expected: expectedShare.turret(p.role) },
       kp:     { actual: kp, expected: EXPECTED_KP[p.role] },
       deaths: { actual: deathShare, expected: expDeath },
-      kda:    { actual: kda, expected: KDA_TARGET },
+      kda:    { actual: kda, expected: KDA_TARGET[p.role] },
     };
     for (const stat of ["gold", "damage", "taken", "turret", "kp"]) {
       stats[stat].value = shareScore(stats[stat].actual, stats[stat].expected);
     }
     // Fewer deaths than expected is good; no team deaths at all counts as mildly good for everyone.
     stats.deaths.value = totals.deaths > 0 ? clamp((expDeath - deathShare) / expDeath, -1, 1) : 0.5;
-    stats.kda.value = clamp((kda - KDA_TARGET) / KDA_TARGET, -1, 1);
+    stats.kda.value = clamp((kda - KDA_TARGET[p.role]) / KDA_TARGET[p.role], -1, 1);
 
     const weights = WEIGHTS[p.role];
     const breakdown = Object.keys(stats).map((stat) => ({
@@ -105,7 +107,7 @@ function describe(stat, s, p) {
     case "turret": return `${pct(s.actual)} of team turret damage (≈${pct(s.expected)} expected)`;
     case "kp":     return `${pct(s.actual)} kill participation (≈${pct(s.expected)} expected)`;
     case "deaths": return `${p.deaths} deaths = ${pct(s.actual)} of team deaths (≈${pct(s.expected)} expected)`;
-    case "kda":    return `KDA ${s.actual.toFixed(1)} (target ${KDA_TARGET})`;
+    case "kda":    return `KDA ${s.actual.toFixed(1)} (target ${s.expected} for this role)`;
   }
 }
 
